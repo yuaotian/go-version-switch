@@ -1,6 +1,6 @@
 # Go-bits 数据目录
 data/
-
+bin/
 # Go 编译产物
 *.exe
 *.exe~

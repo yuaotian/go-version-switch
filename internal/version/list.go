@@ -37,65 +37,81 @@ func GetVersionList(baseDir string, forceUpdate bool) (*VersionList, error) {
 	}
 
 	// 获取已安装版本
-	installed, err := GetInstalledVersions(baseDir)
-	if err == nil {
-		for _, v := range installed {
-			list.InstalledPaths[v.Version] = v.Path
+	versionDir := filepath.Join(baseDir, "go-version")
+	if err := os.MkdirAll(versionDir, 0755); err != nil {
+		return nil, fmt.Errorf("创建版本目录失败: %v", err)
+	}
+
+	// 遍历版本目录获取已安装版本
+	entries, err := os.ReadDir(versionDir)
+	if err != nil {
+		fmt.Printf("警告: 读取版本目录失败: %v\n", err)
+	} else {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				dirName := entry.Name()
+				if strings.HasPrefix(dirName, "go-") {
+					// 从目录名解析版本号和架构
+					parts := strings.Split(strings.TrimPrefix(dirName, "go-"), "-")
+					if len(parts) >= 2 {
+						version := parts[0]
+						path := filepath.Join(versionDir, dirName)
+						list.InstalledPaths[version] = path
+					}
+				}
+			}
 		}
 	}
 
-	// 尝试从缓存加载版本列表
-	cached, err := loadVersionListCache()
-	needUpdate := forceUpdate || err != nil || shouldUpdateVersions()
+	// 确保配置目录存在
+	configDir := filepath.Join(baseDir, "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return nil, fmt.Errorf("创建配置目录失败: %v", err)
+	}
 
-	if !needUpdate && cached != nil {
-		list.Versions = cached.Versions
-		list.LastUpdateTime = cached.LastUpdateTime
-	} else {
-		fmt.Println("正在更新版本列表...")
+	// 获取缓存文件路径
+	cacheFile := filepath.Join(configDir, "versions.json")
+	needUpdate := forceUpdate
+
+	// 如果缓存文件不存在，需要更新
+	if !needUpdate {
+		if _, err := os.Stat(cacheFile); os.IsNotExist(err) {
+			needUpdate = true
+		}
+	}
+
+	// 如果不需要更新，尝试从缓存加载
+	if !needUpdate {
+		versions, err := LoadVersionsCache(cacheFile)
+		if err == nil {
+			list.Versions = versions
+			list.LastUpdateTime = getFileModTime(cacheFile)
+			return list, nil
+		}
+		// 如果加载缓存失败，需要更新
+		needUpdate = true
+	}
+
+	// 需要更新时，从官网获取版本列表
+	if needUpdate {
+		fmt.Println("正在从官网获取版本列表...")
 		versions, err := FetchVersions()
 		if err != nil {
-			if cached != nil {
-				fmt.Printf("警告: 获取在线版本列表失败: %v，使用缓存数据\n", err)
-				list.Versions = cached.Versions
-				list.LastUpdateTime = cached.LastUpdateTime
-			} else {
-				return nil, fmt.Errorf("获取版本列表失败: %v", err)
-			}
-		} else {
-			list.Versions = versions
-			list.LastUpdateTime = time.Now()
+			return nil, fmt.Errorf("获取版本列表失败: %v", err)
+		}
 
-			// 保存到缓存
-			if err := saveVersionListCache(list); err != nil {
-				fmt.Printf("警告: 保存版本缓存失败: %v\n", err)
-			}
+		list.Versions = versions
+		list.LastUpdateTime = time.Now()
+
+		// 保存到缓存
+		if err := SaveVersionsCache(versions, cacheFile); err != nil {
+			fmt.Printf("警告: 保存版本缓存失败: %v\n", err)
 		}
 	}
 
 	// 对版本进行排序
 	sort.Slice(list.Versions, func(i, j int) bool {
-		v1Parts := strings.Split(list.Versions[i].Version, ".")
-		v2Parts := strings.Split(list.Versions[j].Version, ".")
-
-		// 确保两个版本号都有3个部分
-		for len(v1Parts) < 3 {
-			v1Parts = append(v1Parts, "0")
-		}
-		for len(v2Parts) < 3 {
-			v2Parts = append(v2Parts, "0")
-		}
-
-		// 依次比较每个部分
-		for k := 0; k < 3; k++ {
-			num1, _ := strconv.Atoi(v1Parts[k])
-			num2, _ := strconv.Atoi(v2Parts[k])
-
-			if num1 != num2 {
-				return num1 > num2 // 降序排列，新版本在前
-			}
-		}
-		return false
+		return compareVersions(list.Versions[i].Version, list.Versions[j].Version) > 0
 	})
 
 	// 过滤只显示当前系统架构的版本
@@ -294,10 +310,10 @@ func (l *VersionList) PrintVersionList() {
 		}
 	}
 	fmt.Println(strings.Repeat("=", 80))
-	fmt.Println("提示: 使用 'go-bits install <版本号>' 安装指定版本")
-	fmt.Println("      使用 'go-bits use <版本号>' 切换到指定版本")
-	fmt.Println("      使用 'go-bits install <版本号> --arch <架构>' 安装指定架构的版本")
-	fmt.Println("      使用 'go-bits use <版本号> --arch <架构>' 切换到指定架构的版本")
+	fmt.Println("提示: 使用 'go-version-switch install <版本号>' 安装指定版本")
+	fmt.Println("      使用 'go-version-switch use <版本号>' 切换到指定版本")
+	fmt.Println("      使用 'go-version-switch install <版本号> --arch <架构>' 安装指定架构的版本")
+	fmt.Println("      使用 'go-version-switch use <版本号> --arch <架构>' 切换到指定架构的版本")
 	fmt.Println("架构选项: x86 (32位), x64 (64位), arm (32位), arm64 (64位)")
 	fmt.Println(strings.Repeat("=", 80))
 }

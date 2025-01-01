@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"go-bits-switch/internal/version"
+	"go-version-switch/internal/version"
 )
 
 // DownloadInfo 下载信息

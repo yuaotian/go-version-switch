@@ -1,5 +1,5 @@
-module go-bits-switch
+module go-version-switch
 
-go 1.23.4
+go 1.20
 
-require golang.org/x/sys v0.28.0 // indirect
+

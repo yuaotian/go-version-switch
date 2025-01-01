@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+	"time"
 )
 
 // Config 表示工具的配置信息
@@ -13,6 +13,7 @@ type Config struct {
 	BaseDir        string            `json:"base_dir"`        // Go版本安装的基础目录
 	CurrentVersion string            `json:"current_version"` // 当前使用的Go版本
 	Versions       map[string]string `json:"versions"`        // 已安装的版本映射 version -> path
+	LastUpdate     time.Time         `json:"last_update"`     // 上次更新时间
 }
 
 var (
@@ -25,17 +26,21 @@ var (
 // LoadConfig 加载配置文件
 func LoadConfig() (*Config, error) {
 	// 确保配置目录存在
-	configDir := filepath.Dir(defaultConfigPath)
+	configDir := filepath.Join(filepath.Dir(os.Args[0]), "data", "config")
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		return nil, fmt.Errorf("创建配置目录失败: %v", err)
 	}
 
-	// 尝试读取配置文件
-	data, err := os.ReadFile(defaultConfigPath)
+	configFile := filepath.Join(configDir, "config.json")
+	data, err := os.ReadFile(configFile)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// 如果配置文件不存在，创建默认配置
-			return createDefaultConfig()
+			config := &Config{
+				BaseDir:  filepath.Join(filepath.Dir(os.Args[0]), "data", "go-version"),
+				Versions: make(map[string]string),
+			}
+			return config, SaveConfig(config)
 		}
 		return nil, fmt.Errorf("读取配置文件失败: %v", err)
 	}
@@ -45,63 +50,31 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("解析配置文件失败: %v", err)
 	}
 
+	// 确保版本映射已初始化
+	if config.Versions == nil {
+		config.Versions = make(map[string]string)
+	}
+
 	return &config, nil
 }
 
 // SaveConfig 保存配置到文件
 func SaveConfig(config *Config) error {
+	configFile := filepath.Join(filepath.Dir(os.Args[0]), "data", "config", "config.json")
 	data, err := json.MarshalIndent(config, "", "    ")
 	if err != nil {
 		return fmt.Errorf("序列化配置失败: %v", err)
 	}
 
-	if err := os.WriteFile(defaultConfigPath, data, 0644); err != nil {
+	if err := os.WriteFile(configFile, data, 0644); err != nil {
 		return fmt.Errorf("保存配置文件失败: %v", err)
 	}
 
 	return nil
 }
 
-// createDefaultConfig 创建默认配置
-func createDefaultConfig() (*Config, error) {
-	// 创建所有必要的目录
-	goVersionDir := filepath.Join(dataDir, "go-version")
-	downloadDir := filepath.Join(dataDir, "down")
-
-	// 创建目录
-	dirs := []string{
-		filepath.Join(dataDir, "config"),
-		downloadDir,
-		goVersionDir,
-	}
-
-	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return nil, fmt.Errorf("创建目录失败 %s: %v", dir, err)
-		}
-	}
-
-	config := &Config{
-		BaseDir:  goVersionDir,
-		Versions: make(map[string]string),
-	}
-
-	// 保存默认配置
-	if err := SaveConfig(config); err != nil {
-		return nil, err
-	}
-
-	return config, nil
-}
-
 // AddVersion 添加新版本到配置
 func (c *Config) AddVersion(version, path string) error {
-	// 确保路径使用正确的目录名称
-	dirName := filepath.Base(path)
-	if !strings.HasPrefix(dirName, "go-version-bits-") {
-		return fmt.Errorf("无效的版本目录名称: %s", dirName)
-	}
-
 	c.Versions[version] = path
 	return SaveConfig(c)
 }
@@ -133,8 +106,5 @@ func GetVersionDir(version string) string {
 
 // GetVersionPath 获取指定版本的安装路径
 func (c *Config) GetVersionPath(version string) string {
-	if path, exists := c.Versions[version]; exists {
-		return path
-	}
-	return ""
+	return c.Versions[version]
 }

@@ -1,6 +1,6 @@
-# Go-Bits-Switch
+# go-version-switch
 
-Go-Bits-Switch 是一个用于管理多个 Go 版本的命令行工具，支持在 Windows 系统上轻松切换不同的 Go 版本。
+go-version-switch 是一个用于管理多个 Go 版本的命令行工具，支持在 Windows 系统上轻松切换不同的 Go 版本。
 
 ## 功能特性
 
@@ -15,13 +15,13 @@ Go-Bits-Switch 是一个用于管理多个 Go 版本的命令行工具，支持�
 
 1. 克隆仓库：
 ```bash
-git clone https://github.com/yourusername/go-bits-switch.git
-cd go-bits-switch
+git clone https://github.com/yourusername/go-version-switch.git
+cd go-version-switch
 ```
 
 2. 编译安装：
 ```bash
-go build -o go-bits-switch.exe ./cmd
+go build -o go-version-switch.exe ./cmd
 ```
 
 3. 将编译后的可执行文件添加到系统 PATH 环境变量中。
@@ -30,32 +30,32 @@ go build -o go-bits-switch.exe ./cmd
 
 ### 显示当前版本
 ```bash
-go-bits-switch -version
+go-version-switch -version
 ```
 
 ### 列出已安装版本
 ```bash
-go-bits-switch -list
+go-version-switch -list
 ```
 
 ### 安装新版本
 ```bash
-go-bits-switch -install 1.16.5
+go-version-switch -install 1.16.5
 ```
 
 ### 切换版本
 ```bash
-go-bits-switch -use 1.16.5
+go-version-switch -use 1.16.5
 ```
 
 ### 备份环境变量
 ```bash
-go-bits-switch -backup
+go-version-switch -backup
 ```
 
 ### 恢复环境变量
 ```bash
-go-bits-switch -restore path/to/backup/file
+go-version-switch -restore path/to/backup/file
 ```
 
 ## 注意事项
@@ -67,7 +67,7 @@ go-bits-switch -restore path/to/backup/file
 ## 目录结构
 
 ```
-go-bits-switch/
+go-version-switch/
 ├── cmd/
 │   └── main.go           # 主程序入口
 ├── internal/
