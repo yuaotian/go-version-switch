@@ -1,7 +1,9 @@
 package version
 
 import (
+	"archive/zip"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -129,4 +131,132 @@ func normalizeArch(arch string) string {
 	default:
 		return ""
 	}
+}
+
+// verifyDownloadedFile 验证下载文件的完整性
+func verifyDownloadedFile(filePath string) error {
+	// TODO: 实现文件验证逻辑
+	return nil
+}
+
+// downloadGo 下载指定版本的Go
+func downloadGo(version, arch string) (string, error) {
+	// 构建下载URL和文件名
+	filename := fmt.Sprintf("go%s.windows-%s.zip", version, arch)
+	downloadURL := fmt.Sprintf("https://dl.google.com/go/%s", filename)
+
+	// 创建下载目录
+	downloadDir := filepath.Join(filepath.Dir(os.Args[0]), "data", "down")
+	if err := os.MkdirAll(downloadDir, 0755); err != nil {
+		return "", fmt.Errorf("创建下载目录失败: %v", err)
+	}
+
+	downloadPath := filepath.Join(downloadDir, filename)
+
+	// 检查文件是否已存在
+	if _, err := os.Stat(downloadPath); err == nil {
+		fmt.Printf("📦 发现已下载的文件: %s\n", downloadPath)
+		// 验证文件完整性
+		fmt.Println("🔍 正在验证文件完整性...")
+		if err := verifyDownloadedFile(downloadPath); err == nil {
+			fmt.Println("✅ 文件验证成功")
+			return downloadPath, nil
+		} else {
+			fmt.Printf("⚠️ 文件验证失败: %v\n", err)
+			fmt.Println("🔄 将重新下载文件...")
+			// 删除损坏的文件
+			os.Remove(downloadPath)
+		}
+	}
+
+	fmt.Printf("📥 正在下载 Go %s (%s)...\n", version, arch)
+	fmt.Printf("📂 下载目录: %s\n", downloadDir)
+	fmt.Printf("📥 下载地址: %s\n", downloadURL)
+
+	// TODO: 实现下载逻辑
+	return "", fmt.Errorf("下载功能尚未实现")
+}
+
+// extractGo 解压Go安装包
+func extractGo(zipPath, version, arch string) (string, error) {
+	// 构建解压目录
+	extractDir := filepath.Join(filepath.Dir(os.Args[0]), "data", "go-version")
+	if err := os.MkdirAll(extractDir, 0755); err != nil {
+		return "", fmt.Errorf("创建解压目录失败: %v", err)
+	}
+
+	// 目标目录
+	targetDir := filepath.Join(extractDir, fmt.Sprintf("go-%s-%s", version, arch))
+
+	// 检查并清理已存在的目录
+	if _, err := os.Stat(targetDir); err == nil {
+		fmt.Printf("🗑️ 清理已存在的目录: %s\n", targetDir)
+		if err := os.RemoveAll(targetDir); err != nil {
+			return "", fmt.Errorf("清理目录失败: %v", err)
+		}
+	}
+
+	fmt.Printf("📂 解压目录: %s\n", targetDir)
+	fmt.Println("📦 正在解压文件...")
+
+	// 打开zip文件
+	reader, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return "", fmt.Errorf("打开zip文件失败: %v", err)
+	}
+	defer reader.Close()
+
+	// 遍历并解压文件
+	for _, file := range reader.File {
+		// 构建目标路径
+		path := filepath.Join(extractDir, file.Name)
+
+		// 确保目标路径在解压目录内
+		if !strings.HasPrefix(path, extractDir) {
+			return "", fmt.Errorf("非法的文件路径: %s", file.Name)
+		}
+
+		if file.FileInfo().IsDir() {
+			// 创建目录
+			if err := os.MkdirAll(path, file.Mode()); err != nil {
+				return "", fmt.Errorf("创建目录失败: %v", err)
+			}
+			continue
+		}
+
+		// 创建父目录
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			return "", fmt.Errorf("创建父目录失败: %v", err)
+		}
+
+		// 创建文件
+		outFile, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
+		if err != nil {
+			return "", fmt.Errorf("创建文件失败: %v", err)
+		}
+
+		// 打开压缩文件
+		rc, err := file.Open()
+		if err != nil {
+			outFile.Close()
+			return "", fmt.Errorf("打开压缩文件失败: %v", err)
+		}
+
+		// 复制文件内容
+		_, err = io.Copy(outFile, rc)
+		outFile.Close()
+		rc.Close()
+		if err != nil {
+			return "", fmt.Errorf("解压文件失败: %v", err)
+		}
+	}
+
+	// 重命名解压后的目录
+	goDir := filepath.Join(extractDir, "go")
+	if err := os.Rename(goDir, targetDir); err != nil {
+		return "", fmt.Errorf("重命名目录失败: %v", err)
+	}
+
+	fmt.Println("✅ 解压完成")
+	return targetDir, nil
 }

@@ -310,10 +310,10 @@ func (l *VersionList) PrintVersionList() {
 		}
 	}
 	fmt.Println(strings.Repeat("=", 80))
-	fmt.Println("提示: 使用 'go-version-switch install <版本号>' 安装指定版本")
-	fmt.Println("      使用 'go-version-switch use <版本号>' 切换到指定版本")
-	fmt.Println("      使用 'go-version-switch install <版本号> --arch <架构>' 安装指定架构的版本")
-	fmt.Println("      使用 'go-version-switch use <版本号> --arch <架构>' 切换到指定架构的版本")
+	fmt.Println("提示: 使用 'go-version-switch -install <版本号>' 安装指定版本")
+	fmt.Println("      使用 'go-version-switch -use <版本号>' 切换到指定版本")
+	fmt.Println("      使用 'go-version-switch -install <版本号> -arch <架构>' 安装指定架构的版本")
+	fmt.Println("      使用 'go-version-switch -use <版本号> -arch <架构>' 切换到指定架构的版本")
 	fmt.Println("架构选项: x86 (32位), x64 (64位), arm (32位), arm64 (64位)")
 	fmt.Println(strings.Repeat("=", 80))
 }

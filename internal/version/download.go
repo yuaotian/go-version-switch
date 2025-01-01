@@ -41,19 +41,39 @@ func DownloadAndExtract(release *GoRelease, baseDir string) error {
 		return fmt.Errorf("📁 创建版本目录失败: %v", err)
 	}
 
-	// 生成目标文件名
+	// 生成目标文件名和路径
 	fileName := filepath.Base(release.DownloadURL)
 	downloadPath := filepath.Join(downloadDir, fileName)
-
 	fmt.Printf("📥 正在下载 Go %s (%s)...\n", release.Version, release.Arch)
 	fmt.Printf("📂 下载目录: %s\n", downloadDir)
+	fmt.Printf("📦 目标文件: %s\n", downloadPath)
 
-	// 下载文件
-	if err := downloadWithProgress(release.DownloadURL, downloadPath); err != nil {
-		return fmt.Errorf("❌ 下载失败: %v", err)
+	// 检查是否已存在下载文件
+	if _, err := os.Stat(downloadPath); err == nil {
+		fmt.Printf("💡 发现已下载的文件: %s\n", downloadPath)
+		fmt.Printf("🔍 正在验证文件完整性...\n")
+		if err := verifyChecksum(downloadPath, release.SHA256); err == nil {
+			fmt.Printf("✅ 文件验证成功，跳过下载\n")
+		} else {
+			fmt.Printf("⚠️ 文件验证失败: %v\n", err)
+			fmt.Printf("🗑️ 删除损坏的文件...\n")
+			if err := os.Remove(downloadPath); err != nil {
+				return fmt.Errorf("删除损坏的文件失败: %v", err)
+			}
+			fmt.Printf("📥 开始重新下载...\n")
+			if err := downloadWithProgress(release.DownloadURL, downloadPath); err != nil {
+				return fmt.Errorf("❌ 下载失败: %v", err)
+			}
+		}
+	} else {
+		// 文件不存在，直接下载
+		fmt.Printf("📥 开始下载文件...\n")
+		if err := downloadWithProgress(release.DownloadURL, downloadPath); err != nil {
+			return fmt.Errorf("❌ 下载失败: %v", err)
+		}
 	}
 
-	// 验证SHA256
+	// 验证下载文件
 	fmt.Printf("🔍 正在验证文件完整性...\n")
 	if err := verifyChecksum(downloadPath, release.SHA256); err != nil {
 		return fmt.Errorf("❌ %v", err)
@@ -64,13 +84,22 @@ func DownloadAndExtract(release *GoRelease, baseDir string) error {
 	targetDir := filepath.Join(versionDir, fmt.Sprintf("go-%s-%s", release.Version, strings.ToLower(release.Arch)))
 	fmt.Printf("📂 解压目录: %s\n", targetDir)
 
+	// 检查目标目录是否已存在
+	if _, err := os.Stat(targetDir); err == nil {
+		fmt.Printf("🗑️ 清理已存在的目录: %s\n", targetDir)
+		if err := os.RemoveAll(targetDir); err != nil {
+			return fmt.Errorf("❌ 清理目录失败: %v", err)
+		}
+		fmt.Printf("✅ 目录清理完成\n")
+	}
+
 	// 解压文件
 	fmt.Printf("📦 正在解压文件...\n")
 	if err := unzip(downloadPath, targetDir); err != nil {
 		return fmt.Errorf("❌ 解压失败: %v", err)
 	}
 
-	fmt.Printf("✨ Go %s (%s) 安装成功!\n", release.Version, release.Arch)
+	fmt.Printf("✨ Go %s (%s) 解压成功!\n", release.Version, release.Arch)
 
 	// 询问是否设置环境变量
 	fmt.Print("\n🔧 是否立即将此版本设置为系统Go环境? [Y/n] ")

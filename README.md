@@ -15,7 +15,7 @@ go-version-switch 是一个用于管理多个 Go 版本的命令行工具，支�
 
 1. 克隆仓库：
 ```bash
-git clone https://github.com/yourusername/go-version-switch.git
+git clone https://github.com/yuaotian/go-version-switch.git
 cd go-version-switch
 ```
 

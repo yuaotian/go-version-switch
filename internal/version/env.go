@@ -1,6 +1,7 @@
 package version
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,127 +9,235 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 )
 
-var envMutex sync.Mutex
+// EnvBackup 环境变量备份结构
+type EnvBackup struct {
+	Timestamp  string `json:"timestamp"`
+	GOROOT     string `json:"goroot"`
+	Path       string `json:"path"`
+	BackupFile string `json:"backup_file"`
+}
 
-// backupEnvVars 备份环境变量
-func backupEnvVars() error {
-	// 获取当前时间作为备份文件名的一部分
-	timestamp := time.Now().Format("20060102_150405")
+// SetAsCurrentGo 设置指定目录为当前Go环境（向后兼容）
+func SetAsCurrentGo(goRoot string) error {
+	return SetupGoEnvironment(goRoot)
+}
+
+// SetupGoEnvironment 设置Go环境变量
+func SetupGoEnvironment(newGoRoot string) error {
+	// 检查管理员权限
+	isAdmin, err := checkAdminPrivileges()
+	if err != nil {
+		return fmt.Errorf("检查管理员权限失败: %v", err)
+	}
+	if !isAdmin {
+		return fmt.Errorf("需要管理员权限才能修改系统环境变量")
+	}
+
+	// 检测现有Go安装
+	existingGoRoot, err := detectExistingGo()
+	if err != nil {
+		fmt.Printf("警告: 检测现有Go安装时出错: %v\n", err)
+	} else if existingGoRoot != "" {
+		fmt.Printf("发现现有Go安装: %s\n", existingGoRoot)
+		// 备份当前环境变量
+		if err := backupEnvironment(); err != nil {
+			fmt.Printf("警告: 备份环境变量失败: %v\n", err)
+		}
+	}
+
+	// 设置GOROOT
+	if err := manageGoRoot(newGoRoot); err != nil {
+		return fmt.Errorf("设置GOROOT失败: %v", err)
+	}
+
+	// 更新PATH
+	if err := manageGoPath(); err != nil {
+		return fmt.Errorf("更新PATH失败: %v", err)
+	}
+
+	// 通知用户
+	notifyUser()
+	return nil
+}
+
+// isValidGoRoot 检查是否为有效的Go安装目录（向后兼容）
+func isValidGoRoot(dir string) bool {
+	return validateGoRootPath(dir) == nil
+}
+
+// backupEnvironment 备份环境变量
+func backupEnvironment() error {
+	// 创建备份目录
 	backupDir := filepath.Join(filepath.Dir(os.Args[0]), "backup")
 	if err := os.MkdirAll(backupDir, 0755); err != nil {
 		return fmt.Errorf("创建备份目录失败: %v", err)
 	}
 
-	backupFile := filepath.Join(backupDir, fmt.Sprintf("env_backup_%s.reg", timestamp))
+	// 获取当前GOROOT
+	goroot := os.Getenv("GOROOT")
 
-	// 导出环境变量到注册表文件
-	cmd := exec.Command("REG", "EXPORT", "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment", backupFile)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("备份环境变量失败: %v\n%s", err, output)
+	// 获取当前PATH
+	cmd := exec.Command("REG", "QUERY", "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment", "/v", "Path")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("获取PATH环境变量失败: %v", err)
+	}
+
+	re := regexp.MustCompile(`REG_(?:EXPAND_)?SZ\s+(.+)`)
+	matches := re.FindStringSubmatch(string(output))
+	if len(matches) < 2 {
+		return fmt.Errorf("解析PATH环境变量失败")
+	}
+	path := strings.TrimSpace(matches[1])
+
+	// 创建备份对象
+	timestamp := time.Now().Format("20060102_150405")
+	backupFile := filepath.Join(backupDir, fmt.Sprintf("env_backup_%s.json", timestamp))
+	backup := EnvBackup{
+		Timestamp:  timestamp,
+		GOROOT:     goroot,
+		Path:       path,
+		BackupFile: backupFile,
+	}
+
+	// 保存备份
+	data, err := json.MarshalIndent(backup, "", "    ")
+	if err != nil {
+		return fmt.Errorf("序列化备份数据失败: %v", err)
+	}
+
+	if err := os.WriteFile(backupFile, data, 0644); err != nil {
+		return fmt.Errorf("写入备份文件失败: %v", err)
 	}
 
 	fmt.Printf("✅ 环境变量已备份到: %s\n", backupFile)
 	return nil
 }
 
-// SetAsCurrentGo 设置指定目录为当前Go环境
-func SetAsCurrentGo(goRoot string) error {
-	envMutex.Lock()
-	defer envMutex.Unlock()
-
-	fmt.Println("⚠️ 正在修改系统环境变量，请确保以管理员权限运行...")
-
-	// 备份环境变量
-	if err := backupEnvVars(); err != nil {
-		fmt.Printf("警告: 备份环境变量失败: %v\n", err)
-		fmt.Println("建议在继续之前手动备份系统环境变量")
-		fmt.Print("是否继续? [y/N] ")
-		var answer string
-		fmt.Scanln(&answer)
-		if strings.ToLower(answer) != "y" {
-			return fmt.Errorf("操作已取消")
+// detectExistingGo 检测现有的Go安装
+func detectExistingGo() (string, error) {
+	// 尝试使用go env命令获取GOROOT
+	cmd := exec.Command("go", "env", "GOROOT")
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		goRoot := strings.TrimSpace(string(output))
+		if goRoot != "" {
+			return goRoot, nil
 		}
 	}
 
-	// 规范化路径
-	goRoot = filepath.Clean(goRoot)
+	// 如果go命令失败，尝试从环境变量获取
+	return os.Getenv("GOROOT"), nil
+}
 
-	// 检查目录是否存在
+// manageGoRoot 管理GOROOT环境变量
+func manageGoRoot(goRoot string) error {
+	// 验证路径
+	if err := validateGoRootPath(goRoot); err != nil {
+		return fmt.Errorf("Go路径验证失败: %v", err)
+	}
+
+	// 设置GOROOT环境变量
+	cmd := exec.Command("REG", "ADD", "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+		"/v", "GOROOT", "/t", "REG_SZ", "/d", goRoot, "/f")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("设置GOROOT失败: %v\n%s", err, output)
+	}
+
+	// 更新当前进程的环境变量
+	if err := os.Setenv("GOROOT", goRoot); err != nil {
+		return fmt.Errorf("更新当前进程GOROOT失败: %v", err)
+	}
+
+	fmt.Println("✅ GOROOT环境变量已更新")
+	return nil
+}
+
+// manageGoPath 管理PATH环境变量
+func manageGoPath() error {
+	// 获取系统PATH
+	cmd := exec.Command("REG", "QUERY", "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+		"/v", "Path")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("获取系统PATH失败: %v", err)
+	}
+
+	// 解析PATH值
+	re := regexp.MustCompile(`REG_(?:EXPAND_)?SZ\s+(.+)`)
+	matches := re.FindStringSubmatch(string(output))
+	if len(matches) < 2 {
+		return fmt.Errorf("解析系统PATH失败")
+	}
+
+	currentPath := strings.TrimSpace(matches[1])
+
+	// 检查是否已包含%GOROOT%\bin
+	if strings.Contains(currentPath, "%GOROOT%\\bin") {
+		fmt.Println("✅ PATH已包含Go路径")
+		return nil
+	}
+
+	// 添加%GOROOT%\bin到PATH
+	newPath := currentPath + string(os.PathListSeparator) + "%GOROOT%\\bin"
+
+	// 更新系统PATH
+	cmd = exec.Command("REG", "ADD", "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+		"/v", "Path", "/t", "REG_EXPAND_SZ", "/d", newPath, "/f")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("更新系统PATH失败: %v\n%s", err, output)
+	}
+
+	// 更新当前进程的PATH
+	if err := os.Setenv("PATH", newPath); err != nil {
+		return fmt.Errorf("更新当前进程PATH失败: %v", err)
+	}
+
+	// 广播环境变量更改消息
+	broadcastEnvChange()
+
+	fmt.Println("✅ PATH环境变量已更新")
+	return nil
+}
+
+// notifyUser 通知用户重启相关程序
+func notifyUser() {
+	fmt.Println("\n✨ Go环境变量设置完成！")
+	fmt.Println("\n⚠️ 请重启以下程序以使环境变量生效：")
+	fmt.Println("1. Visual Studio Code")
+	fmt.Println("2. IntelliJ IDEA")
+	fmt.Println("3. 终端 (Terminal)")
+	fmt.Println("4. PowerShell")
+	fmt.Println("\n重启后，请在终端中运行 'go version' 验证安装是否成功")
+}
+
+// validateGoRootPath 验证Go根目录路径
+func validateGoRootPath(goRoot string) error {
+	// 检查路径是否存在
 	if _, err := os.Stat(goRoot); os.IsNotExist(err) {
-		return fmt.Errorf("Go目录不存在: %s", goRoot)
+		return fmt.Errorf("目录不存在: %s", goRoot)
 	}
 
 	// 检查是否为有效的Go安装目录
-	if !isValidGoRoot(goRoot) {
-		return fmt.Errorf("无效的Go安装目录: %s", goRoot)
+	requiredPaths := []string{
+		filepath.Join(goRoot, "bin", "go"+executableExtension()),
+		filepath.Join(goRoot, "pkg"),
+		filepath.Join(goRoot, "src"),
 	}
 
-	// 保存原始环境变量，以便回滚
-	originalGoRoot := os.Getenv("GOROOT")
-	originalPath := os.Getenv("PATH")
-
-	fmt.Printf("📝 当前GOROOT: %s\n", originalGoRoot)
-	fmt.Printf("📝 新GOROOT: %s\n", goRoot)
-
-	// 设置GOROOT环境变量
-	if err := setEnvVar("GOROOT", goRoot); err != nil {
-		return fmt.Errorf("设置GOROOT失败: %v", err)
+	for _, path := range requiredPaths {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			return fmt.Errorf("无效的Go安装目录，缺少必要文件: %s", path)
+		}
 	}
-	fmt.Println("✅ GOROOT环境变量已更新")
-
-	// 更新PATH环境变量
-	binDir := filepath.Join(goRoot, "bin")
-	if err := addToPath(binDir); err != nil {
-		// 回滚GOROOT
-		_ = setEnvVar("GOROOT", originalGoRoot)
-		return fmt.Errorf("更新PATH失败: %v", err)
-	}
-	fmt.Println("✅ PATH环境变量已更新")
-
-	// 验证安装
-	if err := verifyGoInstallation(); err != nil {
-		// 回滚所有更改
-		_ = setEnvVar("GOROOT", originalGoRoot)
-		_ = setEnvVar("PATH", originalPath)
-		return fmt.Errorf("验证安装失败: %v", err)
-	}
-
-	fmt.Println("\n✨ Go环境已成功切换！")
-	fmt.Println("⚠️ 注意事项：")
-	fmt.Println("1. 某些程序可能需要重启才能识别新的环境变量")
-	fmt.Println("2. 建议重启以下程序：")
-	fmt.Println("   • 终端 (PowerShell, CMD 等)")
-	fmt.Println("   • 编辑器 (VSCode, IntelliJ IDEA 等)")
-	fmt.Println("   • 其他使用Go环境的应用")
-	fmt.Printf("3. 环境变量备份文件位于: %s\\backup\n", filepath.Dir(os.Args[0]))
 
 	return nil
 }
 
-// isValidGoRoot 检查是否为有效的Go安装目录
-func isValidGoRoot(dir string) bool {
-	// 检查必要的文件和目录是否存在
-	requiredPaths := []string{
-		filepath.Join(dir, "bin", "go"+executableExtension()),
-		filepath.Join(dir, "pkg"),
-		filepath.Join(dir, "src"),
-	}
-
-	for _, path := range requiredPaths {
-		cleanPath := filepath.Clean(path)
-		if _, err := os.Stat(cleanPath); os.IsNotExist(err) {
-			return false
-		}
-	}
-
-	return true
-}
-
-// executableExtension 根据操作系统返回可执行文件扩展名
+// executableExtension 返回可执行文件扩展名
 func executableExtension() string {
 	if runtime.GOOS == "windows" {
 		return ".exe"
@@ -136,95 +245,19 @@ func executableExtension() string {
 	return ""
 }
 
-// setEnvVar 设置环境变量
-func setEnvVar(name, value string) error {
-	// 更新当前进程的环境变量
-	if err := os.Setenv(name, value); err != nil {
-		return fmt.Errorf("设置当前进程环境变量失败: %v", err)
+// checkAdminPrivileges 检查是否具有管理员权限
+func checkAdminPrivileges() (bool, error) {
+	if runtime.GOOS != "windows" {
+		return false, fmt.Errorf("暂不支持在 %s 系统上运行", runtime.GOOS)
 	}
 
-	if runtime.GOOS == "windows" {
-		// 在Windows上使用REG ADD命令设置系统环境变量
-		cmd := exec.Command("REG", "ADD", "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment", "/v", name, "/t", "REG_SZ", "/d", value, "/f")
-		if output, err := cmd.CombinedOutput(); err != nil {
-			// 回滚当前进程的环境变量
-			_ = os.Setenv(name, os.Getenv(name))
-			return fmt.Errorf("设置系统环境变量失败: %v\n%s", err, output)
-		}
-
-		// 广播环境变量更改消息
-		broadcastEnvChange()
-	} else {
-		return fmt.Errorf("暂不支持在 %s 系统上设置环境变量", runtime.GOOS)
-	}
-	return nil
-}
-
-// addToPath 添加目录到PATH环境变量
-func addToPath(dir string) error {
-	// 获取系统PATH环境变量
-	cmd := exec.Command("REG", "QUERY", "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment", "/v", "Path")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("获取系统PATH失败: %v", err)
-	}
-
-	// 使用正则表达式解析PATH值
-	re := regexp.MustCompile(`REG_SZ\s+(.+)`)
-	matches := re.FindStringSubmatch(string(output))
-	if len(matches) < 2 {
-		return fmt.Errorf("解析系统PATH失败")
-	}
-	currentPath := strings.TrimSpace(matches[1])
-
-	// 规范化所有路径分隔符
-	currentPath = strings.ReplaceAll(currentPath, "/", "\\")
-	paths := strings.Split(currentPath, string(os.PathListSeparator))
-
-	// 清理并规范化所有路径
-	var cleanPaths []string
-	for _, path := range paths {
-		if path = strings.TrimSpace(path); path != "" {
-			cleanPaths = append(cleanPaths, filepath.Clean(path))
-		}
-	}
-
-	// 检查路径是否已存在
-	dir = filepath.Clean(dir)
-	for _, path := range cleanPaths {
-		if strings.EqualFold(path, dir) { // Windows 路径不区分大小写
-			return nil // 路径已存在，无需添加
-		}
-	}
-
-	// 添加新路径
-	cleanPaths = append(cleanPaths, dir)
-	newPath := strings.Join(cleanPaths, string(os.PathListSeparator))
-
-	if runtime.GOOS == "windows" {
-		// 在Windows上使用REG ADD命令更新系统PATH
-		cmd = exec.Command("REG", "ADD", "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment", "/v", "Path", "/t", "REG_SZ", "/d", newPath, "/f")
-		if output, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("更新系统PATH失败: %v\n%s", err, output)
-		}
-
-		// 更新当前进程的PATH
-		if err := os.Setenv("PATH", newPath); err != nil {
-			return fmt.Errorf("更新当前进程PATH失败: %v", err)
-		}
-
-		// 广播环境变量更改消息
-		broadcastEnvChange()
-	} else {
-		return fmt.Errorf("暂不支持在 %s 系统上更新PATH", runtime.GOOS)
-	}
-	return nil
+	cmd := exec.Command("net", "session")
+	err := cmd.Run()
+	return err == nil, nil
 }
 
 // broadcastEnvChange 广播环境变量更改消息
 func broadcastEnvChange() {
-	// 使用 SendMessageTimeout 发送 WM_SETTINGCHANGE 消息
-	// 这需要调用 Windows API，这里我们使用 PowerShell 命令来实现
 	cmd := exec.Command("powershell", "-Command", `
 $source = @'
 using System;
@@ -243,16 +276,4 @@ $result = [UIntPtr]::Zero
 [Win32]::SendMessageTimeout($HWND_BROADCAST, $WM_SETTINGCHANGE, [UIntPtr]::Zero, "Environment", 2, 5000, [ref]$result)
 	`)
 	_ = cmd.Run()
-}
-
-// verifyGoInstallation 验证Go安装是否正确
-func verifyGoInstallation() error {
-	// 运行 go version 命令验证安装
-	cmd := exec.Command("go", "version")
-	cmd.Env = os.Environ() // 确保使用更新后的环境变量
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("运行 'go version' 失败: %v\n%s", err, output)
-	}
-	return nil
 }

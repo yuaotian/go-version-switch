@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -13,7 +14,34 @@ type Config struct {
 	BaseDir        string            `json:"base_dir"`        // Go版本安装的基础目录
 	CurrentVersion string            `json:"current_version"` // 当前使用的Go版本
 	Versions       map[string]string `json:"versions"`        // 已安装的版本映射 version -> path
-	LastUpdate     time.Time         `json:"last_update"`     // 上次更新时间
+	LastUpdate     CustomTime        `json:"last_update"`     // 上次更新时间
+}
+
+// CustomTime 自定义时间类型，用于格式化 JSON 输出
+type CustomTime struct {
+	time.Time
+}
+
+// MarshalJSON 自定义时间的 JSON 序列化方法
+func (ct CustomTime) MarshalJSON() ([]byte, error) {
+	return []byte(fmt.Sprintf(`"%s"`, ct.Format("2006-01-02 15:04:05"))), nil
+}
+
+// UnmarshalJSON 自定义时间的 JSON 反序列化方法
+func (ct *CustomTime) UnmarshalJSON(data []byte) error {
+	// 去掉引号
+	str := strings.Trim(string(data), `"`)
+	// 尝试解析自定义格式
+	t, err := time.Parse("2006-01-02 15:04:05", str)
+	if err != nil {
+		// 如果解析失败，尝试解析 ISO 格式
+		t, err = time.Parse(time.RFC3339, str)
+		if err != nil {
+			return err
+		}
+	}
+	ct.Time = t
+	return nil
 }
 
 var (
