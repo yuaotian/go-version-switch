@@ -104,7 +104,6 @@ func DownloadAndExtract(release *GoRelease, baseDir string) error {
 		}
 	}
 
-	
 	if err := unzip(downloadPath, targetDir); err != nil {
 		return fmt.Errorf("❌ 解压失败: %v", err)
 	}
@@ -162,7 +161,9 @@ func downloadWithProgress(url string, destPath string) error {
 // ProgressWriter 进度显示写入器
 type ProgressWriter struct {
 	Writer   io.Writer
-	Progress *DownloadProgress
+	Progress interface {
+		UpdateProgress(n int64)
+	}
 }
 
 func (pw *ProgressWriter) Write(p []byte) (int, error) {
@@ -171,8 +172,7 @@ func (pw *ProgressWriter) Write(p []byte) (int, error) {
 		return n, err
 	}
 
-	pw.Progress.Downloaded += int64(n)
-	pw.Progress.showProgress()
+	pw.Progress.UpdateProgress(int64(n))
 	return n, nil
 }
 
@@ -330,4 +330,76 @@ func (pr *ProgressReader) Read(p []byte) (n int, err error) {
 		pr.OnProgress(int64(n))
 	}
 	return
+}
+
+// DownloadManager 下载管理器
+type DownloadManager struct {
+	URL         string
+	DestPath    string
+	ProgressBar *ProgressBar
+	ContentSize int64
+	Downloaded  int64
+	StartTime   time.Time
+}
+
+func NewDownloadManager(url, destPath string) *DownloadManager {
+	return &DownloadManager{
+		URL:         url,
+		DestPath:    destPath,
+		ProgressBar: NewDefaultProgressBar(),
+	}
+}
+
+func (dm *DownloadManager) Download() error {
+	resp, err := http.Get(dm.URL)
+	if err != nil {
+		return fmt.Errorf("下载失败: %v", err)
+	}
+	defer resp.Body.Close()
+
+	dm.ContentSize = resp.ContentLength
+	dm.StartTime = time.Now()
+
+	file, err := os.Create(dm.DestPath)
+	if err != nil {
+		return fmt.Errorf("创建文件失败: %v", err)
+	}
+	defer file.Close()
+
+	writer := &ProgressWriter{
+		Writer:   file,
+		Progress: dm,
+	}
+
+	_, err = io.Copy(writer, resp.Body)
+	fmt.Println() // 进度条结束后换行
+	return err
+}
+
+func (dm *DownloadManager) UpdateProgress(n int64) {
+	dm.Downloaded += n
+	percent := float64(dm.Downloaded) / float64(dm.ContentSize)
+	speed := float64(dm.Downloaded) / time.Since(dm.StartTime).Seconds() / 1024 / 1024
+
+	bar := dm.ProgressBar.RenderProgressBar(percent)
+	eta := dm.calculateETA(speed)
+
+	fmt.Printf("\r⏳ 下载进度: [%s] %.1f%% %.1fMB/s ETA: %s",
+		bar, percent*100, speed, eta)
+}
+
+// calculateETA 计算预计剩余时间
+func (dm *DownloadManager) calculateETA(speed float64) string {
+	if speed <= 0 {
+		return "计算中..."
+	}
+
+	remainingBytes := dm.ContentSize - dm.Downloaded
+	remainingSeconds := float64(remainingBytes) / (speed * 1024 * 1024)
+	return fmt.Sprintf("%.0fs", remainingSeconds)
+}
+
+func (p *DownloadProgress) UpdateProgress(n int64) {
+	p.Downloaded += n
+	p.showProgress()
 }

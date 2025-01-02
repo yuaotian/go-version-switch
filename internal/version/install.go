@@ -1,7 +1,6 @@
 package version
 
 import (
-
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -21,93 +20,55 @@ type InstallOptions struct {
 	Arch    string // 架构
 }
 
-// InstallVersion 安装指定版本的Go
+// InstallVersion 优化后的安装函数
 func InstallVersion(baseDir string, opts InstallOptions) error {
-	// 确保配置目录存在
-	configDir := filepath.Join(baseDir, "config")
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return fmt.Errorf("创建配置目录失败: %v", err)
+	// 验证和准备安装环境
+	if err := prepareInstallEnvironment(baseDir, &opts); err != nil {
+		return err
 	}
 
-	// 如果未指定架构，使用当前系统架构
-	if opts.Arch == "" {
-		opts.Arch = runtime.GOARCH
-	}
-
-	// 转换架构名称
-	arch := normalizeArch(opts.Arch)
-	if arch == "" {
-		return fmt.Errorf("不支持的架构: %s", opts.Arch)
-	}
-
-	// 获取版本列表
-	list, err := GetVersionList(baseDir, false)
+	// 查找目标版本
+	targetRelease, err := findTargetRelease(baseDir, opts)
 	if err != nil {
-		return fmt.Errorf("获取版本列表失败: %v", err)
+		return err
 	}
 
-	// 查找指定版本和架构的发布版本
-	var targetRelease *GoRelease
-	for _, v := range list.Versions {
-		if v.Version == opts.Version && strings.EqualFold(v.Arch, arch) {
-			targetRelease = v
-			break
-		}
+	// 处理本地文件
+	localFile := NewLocalFileHandler(baseDir, opts, targetRelease)
+	if err := localFile.Handle(); err != nil {
+		return err
 	}
-	
-	// 如果未找到版本，则返回错误
-	if targetRelease == nil {
-		return fmt.Errorf("未找到版本 %s 的 %s 架构版本", opts.Version, arch)
-	}
-	
-	// 检查本地是否已有对应版本的压缩包
+
+	// 保存版本信息
+	return saveVersionConfig(baseDir, opts)
+}
+
+// LocalFileHandler 本地文件处理器
+type LocalFileHandler struct {
+	BaseDir       string
+	Opts          InstallOptions
+	TargetRelease *GoRelease
+	LocalPath     string
+}
+
+func NewLocalFileHandler(baseDir string, opts InstallOptions, release *GoRelease) *LocalFileHandler {
 	downloadDir := filepath.Join(baseDir, "down")
-	filename := fmt.Sprintf("go%s.windows-%s.zip", opts.Version, strings.ToLower(arch))
-	
-	localZipPath := filepath.Join(downloadDir, filename)
-	
-	
-	if _, err := os.Stat(localZipPath); err == nil {
-		fmt.Printf("📦 发现本地已有安装包: %s\n", localZipPath)
-		// 验证文件完整性
-		fmt.Println("🔍 正在验证文件完整性...")
-		if err := verifyDownloadedFile(localZipPath, targetRelease.SHA256); err == nil {
-			fmt.Println("✅ 本地文件验证成功，将直接使用")
-			// 使用本地文件进行安装
-			extractDir, err := extractGo(localZipPath, opts.Version, arch)
-			if err != nil {
-				return fmt.Errorf("解压失败: %v", err)
-			}
-			fmt.Printf("✅ 解压完成，安装目录: %s\n", extractDir)
-		} else {
-			fmt.Printf("⚠️ 本地文件验证失败: %v\n", err)
-			fmt.Println("🔄 将重新下载文件...")
-			// 删除损坏的文件
-			os.Remove(localZipPath)
-			// 继续下载新文件
-			if err := DownloadAndExtract(targetRelease, baseDir); err != nil {
-				return fmt.Errorf("安装失败: %v", err)
-			}
-		}
-	} else {
-		// 本地没有文件，直接下载
-		if err := DownloadAndExtract(targetRelease, baseDir); err != nil {
-			return fmt.Errorf("安装失败: %v", err)
-		}
-	}
+	filename := fmt.Sprintf("go%s.windows-%s.zip",
+		opts.Version, strings.ToLower(opts.Arch))
 
-	// 保存版本信息到配置
-	versionDir := filepath.Join(baseDir, "go-version", fmt.Sprintf("go-%s-%s", opts.Version, strings.ToLower(arch)))
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		return fmt.Errorf("加载配置失败: %v", err)
+	return &LocalFileHandler{
+		BaseDir:       baseDir,
+		Opts:          opts,
+		TargetRelease: release,
+		LocalPath:     filepath.Join(downloadDir, filename),
 	}
+}
 
-	if err := cfg.AddVersion(opts.Version, versionDir); err != nil {
-		return fmt.Errorf("保存版本信息失败: %v", err)
+func (h *LocalFileHandler) Handle() error {
+	if _, err := os.Stat(h.LocalPath); err == nil {
+		return h.handleExistingFile()
 	}
-
-	return nil
+	return h.handleNewDownload()
 }
 
 // UseVersion 切换到指定版本
@@ -196,7 +157,6 @@ func verifyDownloadedFile(filePath string, expectedHash string) error {
 	return nil
 }
 
-
 // extractGo 解压Go安装包
 func extractGo(zipPath, version, arch string) (string, error) {
 	// 构建解压目录
@@ -208,7 +168,6 @@ func extractGo(zipPath, version, arch string) (string, error) {
 	// 目标目录
 	targetDir := filepath.Join(extractDir, fmt.Sprintf("go-%s-%s", version, arch))
 
-	
 	fmt.Printf("📂 解压目录: %s\n", targetDir)
 	// 检查并清理已存在的目录
 	if _, err := os.Stat(targetDir); err == nil {
@@ -225,7 +184,7 @@ func extractGo(zipPath, version, arch string) (string, error) {
 			return "", fmt.Errorf("清理目录失败，请手动删除目录 %s 后重试: %v", targetDir, err)
 		}
 	}
-	
+
 	// 解压文件
 	if err := unzip(zipPath, targetDir); err != nil {
 		return "", fmt.Errorf("❌ 解压失败: %v", err)
@@ -247,4 +206,95 @@ func extractGo(zipPath, version, arch string) (string, error) {
 		fmt.Printf("   • 其他使用Go环境的应用\n")
 	}
 	return targetDir, nil
+}
+
+// prepareInstallEnvironment 准备安装环境
+func prepareInstallEnvironment(baseDir string, opts *InstallOptions) error {
+	// 确保配置目录存在
+	configDir := filepath.Join(baseDir, "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("创建配置目录失败: %v", err)
+	}
+
+	// 如果未指定架构，使用当前系统架构
+	if opts.Arch == "" {
+		opts.Arch = runtime.GOARCH
+	}
+
+	// 转换架构名称
+	arch := normalizeArch(opts.Arch)
+	if arch == "" {
+		return fmt.Errorf("不支持的架构: %s", opts.Arch)
+	}
+
+	return nil
+}
+
+// findTargetRelease 查找目标版本
+func findTargetRelease(baseDir string, opts InstallOptions) (*GoRelease, error) {
+	// 获取版本列表
+	list, err := GetVersionList(baseDir, false)
+	if err != nil {
+		return nil, fmt.Errorf("获取版本列表失败: %v", err)
+	}
+
+	// 查找指定版本和架构的发布版本
+	arch := normalizeArch(opts.Arch)
+	for _, v := range list.Versions {
+		if v.Version == opts.Version && strings.EqualFold(v.Arch, arch) {
+			return v, nil
+		}
+	}
+
+	return nil, fmt.Errorf("未找到版本 %s 的 %s 架构版本", opts.Version, arch)
+}
+
+// saveVersionConfig 保存版本配置
+func saveVersionConfig(baseDir string, opts InstallOptions) error {
+	versionDir := filepath.Join(baseDir, "go-version",
+		fmt.Sprintf("go-%s-%s", opts.Version, strings.ToLower(opts.Arch)))
+
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return fmt.Errorf("加载配置失败: %v", err)
+	}
+
+	if err := cfg.AddVersion(opts.Version, versionDir); err != nil {
+		return fmt.Errorf("保存版本信息失败: %v", err)
+	}
+
+	return nil
+}
+
+// LocalFileHandler 的方法实现
+func (h *LocalFileHandler) handleExistingFile() error {
+	fmt.Printf("📦 发现本地已有安装包: %s\n", h.LocalPath)
+	fmt.Println("🔍 正在验证文件完整性...")
+
+	verifier := &FileVerifier{
+		FilePath:     h.LocalPath,
+		ExpectedHash: h.TargetRelease.SHA256,
+	}
+
+	if err := verifier.Verify(); err == nil {
+		fmt.Println("✅ 本地文件验证成功，将直接使用")
+		extractDir, err := extractGo(h.LocalPath, h.Opts.Version, h.Opts.Arch)
+		if err != nil {
+			return fmt.Errorf("解压失败: %v", err)
+		}
+		fmt.Printf("✅ 解压完成，安装目录: %s\n", extractDir)
+		return nil
+	} else {
+		fmt.Printf("⚠️ 本地文件验证失败: %v\n", err)
+		fmt.Println("🔄 将重新下载文件...")
+		os.Remove(h.LocalPath)
+		return h.handleNewDownload()
+	}
+}
+
+func (h *LocalFileHandler) handleNewDownload() error {
+	if err := DownloadAndExtract(h.TargetRelease, h.BaseDir); err != nil {
+		return fmt.Errorf("安装失败: %v", err)
+	}
+	return nil
 }
