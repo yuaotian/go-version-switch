@@ -2,8 +2,9 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
-![Go Version](https://img.shields.io/badge/go-%3E%3D%201.16-blue)
+[![Release](https://img.shields.io/github/v/release/yuaotian/go-version-switch?style=flat-square&logo=github&color=blue)](https://github.com/yuaotian/go-version-switch/releases/latest)
+[![Go Version](https://img.shields.io/badge/go-%3E%3D%201.16-blue)](https://img.shields.io/badge/go-%3E%3D%201.16-blue)
+[![Release Build](https://github.com/yuaotian/go-version-switch/actions/workflows/release.yml/badge.svg)](https://github.com/yuaotian/go-version-switch/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
 🔄 一个简单的 Go 版本管理工具，专为 Windows 系统打造
