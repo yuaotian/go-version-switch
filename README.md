@@ -1,89 +1,111 @@
 # go-version-switch
 
-go-version-switch 是一个用于管理多个 Go 版本的命令行工具，支持在 Windows 系统上轻松切换不同的 Go 版本。
+<div align="center">
 
-## 功能特性
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Go Version](https://img.shields.io/badge/go-%3E%3D%201.16-blue)
+[![License](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
-- 显示当前 Go 版本信息
-- 列出所有已安装的 Go 版本
-- 从官方源下载并安装指定版本的 Go
-- 在不同 Go 版本之间快速切换
-- 自动管理系统环境变量（GOROOT、PATH）
-- 支持环境变量的备份和恢复
+🔄 一个简单而强大的 Go 版本管理工具，专为 Windows 系统打造
 
-## 安装
+[English](./README_EN.md) | 简体中文
 
-1. 克隆仓库：
+</div>
+
+## ✨ 特性
+
+- 🔍 实时显示当前 Go 版本信息
+- 📋 管理多个已安装的 Go 版本
+- ⬇️ 自动下载安装官方发布版本
+- 🔄 快速切换不同 Go 版本
+- ⚙️ 智能管理系统环境变量
+- 💾 支持环境配置备份恢复
+
+## 🚀 快速开始
+
+### 📥 安装
+
 ```bash
+# 克隆仓库
 git clone https://github.com/yuaotian/go-version-switch.git
 cd go-version-switch
-```
 
-2. 编译安装：
-```bash
+# 编译
 go build -o go-version-switch.exe ./cmd
+
+# 添加到 PATH 环境变量
 ```
 
-3. 将编译后的可执行文件添加到系统 PATH 环境变量中。
+### 🎯 使用示例
 
-## 使用方法
-
-### 显示当前版本
 ```bash
+# 查看当前版本
 go-version-switch -version
-```
+# 输出示例：
+# Current Go Version: go1.16.5
 
-### 列出已安装版本
-```bash
+# 查看可用版本
 go-version-switch -list
-```
+# 输出示例：
+# Installed Go Versions:
+# ✓ 1.16.5 (current)
+#   1.17.3
+#   1.18.1
 
-### 安装新版本
-```bash
-go-version-switch -install 1.16.5
-```
+# 安装新版本
+go-version-switch -install 1.19.5
+# 输出示例：
+# Downloading Go 1.19.5...
+# Installation complete!
 
-### 切换版本
-```bash
-go-version-switch -use 1.16.5
-```
+# 切换版本
+go-version-switch -use 1.19.5
+# 输出示例：
+# Switching to Go 1.19.5...
+# Successfully switched!
 
-### 备份环境变量
-```bash
+# 备份环境配置
 go-version-switch -backup
+# 输出示例：
+# Environment variables backed up to: ./backup_20230615.json
+
+# 恢复环境配置
+go-version-switch -restore ./backup_20230615.json
+# 输出示例：
+# Environment variables restored successfully!
 ```
 
-### 恢复环境变量
-```bash
-go-version-switch -restore path/to/backup/file
-```
-
-## 注意事项
-
-1. 本工具需要管理员权限来修改系统环境变量
-2. 切换版本后需要重启终端或 IDE 以使更改生效
-3. 建议在切换版本前先备份环境变量
-
-## 目录结构
+## 📁 项目结构
 
 ```
 go-version-switch/
-├── cmd/
-│   └── main.go           # 主程序入口
-├── internal/
-│   ├── config/          # 配置管理
-│   ├── download/        # 下载管理
-│   ├── env/            # 环境变量管理
-│   └── version/        # 版本管理
-├── go.mod              # Go 模块文件
-└── README.md           # 项目说明文档
+├── 📂 cmd/
+│   └── main.go              # 程序入口
+├── 📂 internal/
+│   ├── config/             # 配置管理
+│   ├── version/            # 版本控制
+│   └── ...
+├── 📄 go.mod               # 依赖管理
+└── 📝 README.md            # 项目文档
 ```
 
-## 依赖项
+## ⚙️ 配置要求
 
-- Go 1.16 或更高版本
-- golang.org/x/sys
+- Windows 10/11
+- Go 1.16+
+- 管理员权限（用于修改环境变量）
 
-## 许可证
+## 📌 注意事项
 
-MIT License 
+1. 🔐 需要管理员权限来修改系统环境变量
+2. 🔄 切换版本后请重启终端或 IDE
+3. 💾 建议定期备份环境变量配置
+4. ⚠️ 确保网络连接稳定以下载新版本
+
+## 🤝 贡献指南
+
+欢迎提交 Issue 和 Pull Request！
+
+## 📄 开源协议
+
+本项目采用 [MIT](./LICENSE) 开源协议。 
