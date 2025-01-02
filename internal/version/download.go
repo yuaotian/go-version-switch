@@ -41,8 +41,12 @@ func DownloadAndExtract(release *GoRelease, baseDir string) error {
 		return fmt.Errorf("📁 创建版本目录失败: %v", err)
 	}
 
-	// 生成目标文件名和路径
-	fileName := filepath.Base(release.DownloadURL)
+	// 生成标准化的文件名
+	arch := normalizeArch(release.Arch)
+	if arch == "" {
+		return fmt.Errorf("不支持的架构: %s", release.Arch)
+	}
+	fileName := fmt.Sprintf("go%s.windows-%s.zip", release.Version, strings.ToLower(arch))
 	downloadPath := filepath.Join(downloadDir, fileName)
 	fmt.Printf("📥 正在下载 Go %s (%s)...\n", release.Version, release.Arch)
 	fmt.Printf("📂 下载目录: %s\n", downloadDir)
@@ -84,17 +88,23 @@ func DownloadAndExtract(release *GoRelease, baseDir string) error {
 	targetDir := filepath.Join(versionDir, fmt.Sprintf("go-%s-%s", release.Version, strings.ToLower(release.Arch)))
 	fmt.Printf("📂 解压目录: %s\n", targetDir)
 
-	// 检查目标目录是否已存在
+	// 检查并清理已存在的目录
 	if _, err := os.Stat(targetDir); err == nil {
-		fmt.Printf("🗑️ 清理已存在的目录: %s\n", targetDir)
+		fmt.Printf("🗑️  检测到已存在的目录: %s\n", targetDir)
+		fmt.Println("⚠️ 如果清理失败，请确保：")
+		fmt.Println("   1. 没有程序正在使用该目录下的文件")
+		fmt.Println("   2. 关闭所有相关的终端和编辑器")
+		fmt.Println("   3. 退出正在运行的 Go 程序")
+
+		// 等待一小段时间，让用户有机会看到提示
+		time.Sleep(2 * time.Second)
+
 		if err := os.RemoveAll(targetDir); err != nil {
-			return fmt.Errorf("❌ 清理目录失败: %v", err)
+			return fmt.Errorf("清理目录失败，请手动删除目录 %s 后重试: %v", targetDir, err)
 		}
-		fmt.Printf("✅ 目录清理完成\n")
 	}
 
-	// 解压文件
-	fmt.Printf("📦 正在解压文件...\n")
+	
 	if err := unzip(downloadPath, targetDir); err != nil {
 		return fmt.Errorf("❌ 解压失败: %v", err)
 	}
@@ -212,39 +222,59 @@ func verifyChecksum(filePath string, expectedHash string) error {
 	return nil
 }
 
-// unzip 解压zip文件
-func unzip(zipFile string, destDir string) error {
-	r, err := zip.OpenReader(zipFile)
+// unzip 解压文件并显示进度
+func unzip(src, dest string) error {
+	// 打开zip文件
+	r, err := zip.OpenReader(src)
+	if err != nil {
+		return fmt.Errorf("打开zip文件失败: %v", err)
+	}
+	defer r.Close()
+	// 获取压缩包中的文件总数
+	totalFiles := len(r.File)
+	fmt.Printf("📦 正在解压文件 (共 %d 个文件)...\n", totalFiles)
+
 	if err != nil {
 		return err
 	}
 	defer r.Close()
 
-	// 首先创建目标目录
-	if err := os.MkdirAll(destDir, 0755); err != nil {
+	// 计算总大小
+	var totalSize int64
+	for _, f := range r.File {
+		totalSize += int64(f.UncompressedSize64)
+	}
+
+	// 创建目标目录
+	if err := os.MkdirAll(dest, 0755); err != nil {
 		return err
 	}
 
+	// 用于跟踪已解压大小
+	var processedSize int64
+	lastPercent := 0
+
 	for _, f := range r.File {
-		// 去除 "go/" 前缀
-		name := strings.TrimPrefix(f.Name, "go/")
-		if name == "" {
-			continue
+		// 构建完整的目标路径
+		fpath := filepath.Join(dest, f.Name)
+
+		// 检查路径是否在目标目录内（防止 zip slip 漏洞）
+		if !strings.HasPrefix(fpath, filepath.Clean(dest)+string(os.PathSeparator)) {
+			return fmt.Errorf("非法的文件路径: %s", fpath)
 		}
 
-		path := filepath.Join(destDir, name)
-
 		if f.FileInfo().IsDir() {
-			os.MkdirAll(path, f.Mode())
+			os.MkdirAll(fpath, 0755)
 			continue
 		}
 
 		// 确保父目录存在
-		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(fpath), 0755); err != nil {
 			return err
 		}
 
-		outFile, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+		// 创建目标文件
+		outFile, err := os.OpenFile(fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
 		if err != nil {
 			return err
 		}
@@ -255,13 +285,49 @@ func unzip(zipFile string, destDir string) error {
 			return err
 		}
 
-		_, err = io.Copy(outFile, rc)
-		rc.Close()
+		// 创建一个代理 reader 来跟踪进度
+		reader := &ProgressReader{
+			Reader: rc,
+			OnProgress: func(n int64) {
+				processedSize += n
+				percent := int(float64(processedSize) / float64(totalSize) * 100)
+
+				// 每增加1%才更新显示
+				if percent > lastPercent {
+					lastPercent = percent
+					// 清除当前行
+					fmt.Printf("\r📦 正在解压文件... [%-50s] %d%%",
+						strings.Repeat("█", percent/2)+strings.Repeat("░", 50-percent/2),
+						percent)
+				}
+			},
+		}
+
+		_, err = io.Copy(outFile, reader)
+
 		outFile.Close()
+		rc.Close()
+
 		if err != nil {
 			return err
 		}
 	}
 
+	// 完成后换行
+	fmt.Println()
 	return nil
+}
+
+// ProgressReader 是一个用于跟踪读取进度的 io.Reader 包装器
+type ProgressReader struct {
+	Reader     io.Reader
+	OnProgress func(n int64)
+}
+
+func (pr *ProgressReader) Read(p []byte) (n int, err error) {
+	n, err = pr.Reader.Read(p)
+	if n > 0 {
+		pr.OnProgress(int64(n))
+	}
+	return
 }

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 )
@@ -16,6 +17,7 @@ import (
 type EnvBackup struct {
 	Timestamp  string `json:"timestamp"`
 	GOROOT     string `json:"goroot"`
+	GOARCH     string `json:"goarch"`
 	Path       string `json:"path"`
 	BackupFile string `json:"backup_file"`
 }
@@ -117,12 +119,27 @@ func backupEnvironment() error {
 	}
 	path := strings.TrimSpace(matches[1])
 
+	// 获取当前 GOARCH
+	cmd = exec.Command("REG", "QUERY", "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment", "/v", "GOARCH")
+	output, err = cmd.CombinedOutput()
+	var currentArch string
+	if err == nil {
+		re := regexp.MustCompile(`REG_(?:EXPAND_)?SZ\s+(.+)`)
+		if matches := re.FindStringSubmatch(string(output)); len(matches) >= 2 {
+			currentArch = strings.TrimSpace(matches[1])
+		}
+	}
+	if currentArch == "" {
+		currentArch = runtime.GOARCH // 如果获取失败，使用当前系统架构作为默认值
+	}
+
 	// 创建备份对象
 	timestamp := time.Now().Format("20060102_150405")
 	backupFile := filepath.Join(backupDir, fmt.Sprintf("env_backup_%s.json", timestamp))
 	backup := EnvBackup{
 		Timestamp:  timestamp,
 		GOROOT:     goroot,
+		GOARCH:     currentArch,
 		Path:       path,
 		BackupFile: backupFile,
 	}
@@ -300,4 +317,139 @@ $result = [UIntPtr]::Zero
 [Win32]::SendMessageTimeout($HWND_BROADCAST, $WM_SETTINGCHANGE, [UIntPtr]::Zero, "Environment", 2, 5000, [ref]$result)
 	`)
 	_ = cmd.Run()
+}
+
+// RestoreEnvironment 恢复环境变量
+func RestoreEnvironment(backupFile string) error {
+	// 读取备份文件
+	data, err := os.ReadFile(backupFile)
+	if err != nil {
+		return fmt.Errorf("读取备份文件失败: %v", err)
+	}
+
+	var backup EnvBackup
+	if err := json.Unmarshal(data, &backup); err != nil {
+		return fmt.Errorf("解析备份数据失败: %v", err)
+	}
+
+	// 恢复 GOROOT
+	if backup.GOROOT != "" {
+		cmd := exec.Command("REG", "ADD", "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+			"/v", "GOROOT", "/t", "REG_SZ", "/d", backup.GOROOT, "/f")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("恢复 GOROOT 失败: %v\n%s", err, output)
+		}
+		os.Setenv("GOROOT", backup.GOROOT)
+	}
+
+	// 恢复 GOARCH
+	if backup.GOARCH != "" {
+		cmd := exec.Command("REG", "ADD", "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+			"/v", "GOARCH", "/t", "REG_SZ", "/d", backup.GOARCH, "/f")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("恢复 GOARCH 失败: %v\n%s", err, output)
+		}
+		os.Setenv("GOARCH", backup.GOARCH)
+	}
+
+	// 恢复 PATH
+	if backup.Path != "" {
+		cmd := exec.Command("REG", "ADD", "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+			"/v", "Path", "/t", "REG_EXPAND_SZ", "/d", backup.Path, "/f")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("恢复 PATH 失败: %v\n%s", err, output)
+		}
+		os.Setenv("PATH", backup.Path)
+	}
+
+	// 广播环境变量更改
+	broadcastEnvChange()
+
+	// 显示恢复信息
+	fmt.Printf("\n✅ 环境变量已从备份文件恢复: %s\n", backupFile)
+	fmt.Printf("已恢复的配置:\n")
+	fmt.Printf("- GOROOT: %s\n", backup.GOROOT)
+	fmt.Printf("- GOARCH: %s\n", backup.GOARCH)
+	fmt.Printf("- PATH: 已更新\n")
+
+	// 提醒用户重启程序
+	fmt.Println("\n⚠️ 请重启以下程序以使环境变量生效：")
+	fmt.Println("1. Visual Studio Code")
+	fmt.Println("2. IntelliJ IDEA")
+	fmt.Println("3. 终端 (Terminal)")
+	fmt.Println("4. PowerShell")
+	fmt.Println("\n重启后，请在终端中运行 'go version' 验证配置是否正确")
+
+	return nil
+}
+
+// CheckAdminPrivileges 导出 checkAdminPrivileges 函数
+func CheckAdminPrivileges() (bool, error) {
+	return checkAdminPrivileges()
+}
+
+// GetLatestBackup 获取最新的备份文件
+func GetLatestBackup(backupDir string) (string, error) {
+	// 确保备份目录存在
+	if _, err := os.Stat(backupDir); os.IsNotExist(err) {
+		return "", fmt.Errorf("备份目录不存在: %s", backupDir)
+	}
+
+	// 读取备份目录中的所有文件
+	files, err := os.ReadDir(backupDir)
+	if err != nil {
+		return "", fmt.Errorf("读取备份目录失败: %v", err)
+	}
+
+	// 筛选并排序备份文件
+	var backupFiles []string
+	for _, file := range files {
+		if !file.IsDir() && strings.HasPrefix(file.Name(), "env_backup_") && strings.HasSuffix(file.Name(), ".json") {
+			backupFiles = append(backupFiles, filepath.Join(backupDir, file.Name()))
+		}
+	}
+
+	if len(backupFiles) == 0 {
+		return "", fmt.Errorf("未找到有效的备份文件")
+	}
+
+	// 按文件名排序（因为文件名包含时间戳，所以最后一个就是最新的）
+	sort.Strings(backupFiles)
+	latestBackup := backupFiles[len(backupFiles)-1]
+
+	// 验证备份文件
+	if err := validateBackupFile(latestBackup); err != nil {
+		return "", fmt.Errorf("备份文件验证失败: %v", err)
+	}
+
+	return latestBackup, nil
+}
+
+// validateBackupFile 验证备份文件的完整性
+func validateBackupFile(backupFile string) error {
+	data, err := os.ReadFile(backupFile)
+	if err != nil {
+		return fmt.Errorf("读取备份文件失败: %v", err)
+	}
+
+	var backup EnvBackup
+	if err := json.Unmarshal(data, &backup); err != nil {
+		return fmt.Errorf("解析备份文件失败: %v", err)
+	}
+
+	// 验证必要字段
+	if backup.Timestamp == "" {
+		return fmt.Errorf("备份文件缺少时间戳")
+	}
+	if backup.GOROOT == "" {
+		return fmt.Errorf("备份文件缺少 GOROOT")
+	}
+	if backup.GOARCH == "" {
+		return fmt.Errorf("备份文件缺少 GOARCH")
+	}
+	if backup.Path == "" {
+		return fmt.Errorf("备份文件缺少 PATH")
+	}
+
+	return nil
 }

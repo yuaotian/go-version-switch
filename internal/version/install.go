@@ -1,7 +1,7 @@
 package version
 
 import (
-	"archive/zip"
+
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -59,12 +59,14 @@ func InstallVersion(baseDir string, opts InstallOptions) error {
 	if targetRelease == nil {
 		return fmt.Errorf("未找到版本 %s 的 %s 架构版本", opts.Version, arch)
 	}
-
+	
 	// 检查本地是否已有对应版本的压缩包
 	downloadDir := filepath.Join(baseDir, "down")
 	filename := fmt.Sprintf("go%s.windows-%s.zip", opts.Version, strings.ToLower(arch))
+	
 	localZipPath := filepath.Join(downloadDir, filename)
-
+	
+	
 	if _, err := os.Stat(localZipPath); err == nil {
 		fmt.Printf("📦 发现本地已有安装包: %s\n", localZipPath)
 		// 验证文件完整性
@@ -194,43 +196,6 @@ func verifyDownloadedFile(filePath string, expectedHash string) error {
 	return nil
 }
 
-// downloadGo 下载指定版本的Go
-func downloadGo(version, arch string, expectedHash string) (string, error) {
-	// 构建下载URL和文件名
-	filename := fmt.Sprintf("go%s.windows-%s.zip", version, arch)
-	downloadURL := fmt.Sprintf("https://dl.google.com/go/%s", filename)
-
-	// 创建下载目录
-	downloadDir := filepath.Join(filepath.Dir(os.Args[0]), "data", "down")
-	if err := os.MkdirAll(downloadDir, 0755); err != nil {
-		return "", fmt.Errorf("创建下载目录失败: %v", err)
-	}
-
-	downloadPath := filepath.Join(downloadDir, filename)
-
-	// 检查文件是否已存在
-	if _, err := os.Stat(downloadPath); err == nil {
-		fmt.Printf("📦 发现已下载的文件: %s\n", downloadPath)
-		// 验证文件完整性
-		fmt.Println("🔍 正在验证文件完整性...")
-		if err := verifyDownloadedFile(downloadPath, expectedHash); err == nil {
-			fmt.Println("✅ 文件验证成功")
-			return downloadPath, nil
-		} else {
-			fmt.Printf("⚠️ 文件验证失败: %v\n", err)
-			fmt.Println("🔄 将重新下载文件...")
-			// 删除损坏的文件
-			os.Remove(downloadPath)
-		}
-	}
-
-	fmt.Printf("📥 正在下载 Go %s (%s)...\n", version, arch)
-	fmt.Printf("📂 下载目录: %s\n", downloadDir)
-	fmt.Printf("📥 下载地址: %s\n", downloadURL)
-
-	// TODO: 实现下载逻辑
-	return "", fmt.Errorf("下载功能尚未实现")
-}
 
 // extractGo 解压Go安装包
 func extractGo(zipPath, version, arch string) (string, error) {
@@ -243,9 +208,11 @@ func extractGo(zipPath, version, arch string) (string, error) {
 	// 目标目录
 	targetDir := filepath.Join(extractDir, fmt.Sprintf("go-%s-%s", version, arch))
 
+	
+	fmt.Printf("📂 解压目录: %s\n", targetDir)
 	// 检查并清理已存在的目录
 	if _, err := os.Stat(targetDir); err == nil {
-		fmt.Printf("🗑️ 检测到已存在的目录: %s\n", targetDir)
+		fmt.Printf("🗑️  检测到已存在的目录: %s\n", targetDir)
 		fmt.Println("⚠️ 如果清理失败，请确保：")
 		fmt.Println("   1. 没有程序正在使用该目录下的文件")
 		fmt.Println("   2. 关闭所有相关的终端和编辑器")
@@ -258,93 +225,26 @@ func extractGo(zipPath, version, arch string) (string, error) {
 			return "", fmt.Errorf("清理目录失败，请手动删除目录 %s 后重试: %v", targetDir, err)
 		}
 	}
-
-	fmt.Printf("📂 解压目录: %s\n", targetDir)
-	fmt.Println("📦 正在解压文件...")
-
-	// 打开zip文件
-	reader, err := zip.OpenReader(zipPath)
-	if err != nil {
-		return "", fmt.Errorf("打开zip文件失败: %v", err)
-	}
-	defer reader.Close()
-
-	// 获取压缩包中的文件总数
-	totalFiles := len(reader.File)
-	extractedFiles := 0
-	lastPercent := 0
-
-	fmt.Printf("📦 正在解压文件 (共 %d 个文件)...\n", totalFiles)
-	fmt.Print("进度: [")
-
-	// 遍历并解压文件
-	for _, file := range reader.File {
-		// 更新进度显示
-		extractedFiles++
-		percent := extractedFiles * 100 / totalFiles
-		for i := lastPercent; i < percent; i++ {
-			if i%2 == 0 {
-				fmt.Print("=")
-			}
-		}
-		lastPercent = percent
-
-		// 构建目标路径
-		path := filepath.Join(extractDir, file.Name)
-
-		// 确保目标路径在解压目录内
-		if !strings.HasPrefix(path, extractDir) {
-			fmt.Print("]\n") // 确保在错误时关闭进度条
-			return "", fmt.Errorf("非法的文件路径: %s", file.Name)
-		}
-
-		if file.FileInfo().IsDir() {
-			if err := os.MkdirAll(path, file.Mode()); err != nil {
-				fmt.Print("]\n")
-				return "", fmt.Errorf("创建目录失败: %v", err)
-			}
-			continue
-		}
-
-		// 创建父目录
-		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-			fmt.Print("]\n")
-			return "", fmt.Errorf("创建父目录失败: %v", err)
-		}
-
-		// 创建文件
-		outFile, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
-		if err != nil {
-			fmt.Print("]\n")
-			return "", fmt.Errorf("创建文件失败: %v", err)
-		}
-
-		// 打开压缩文件
-		rc, err := file.Open()
-		if err != nil {
-			outFile.Close()
-			fmt.Print("]\n")
-			return "", fmt.Errorf("打开压缩文件失败: %v", err)
-		}
-
-		// 复制文件内容
-		_, err = io.Copy(outFile, rc)
-		outFile.Close()
-		rc.Close()
-		if err != nil {
-			fmt.Print("]\n")
-			return "", fmt.Errorf("解压文件失败: %v", err)
-		}
-	}
-
-	fmt.Print("] 100%\n")
-
-	// 重命名解压后的目录
-	goDir := filepath.Join(extractDir, "go")
-	if err := os.Rename(goDir, targetDir); err != nil {
-		return "", fmt.Errorf("重命名目录失败: %v", err)
+	
+	// 解压文件
+	if err := unzip(zipPath, targetDir); err != nil {
+		return "", fmt.Errorf("❌ 解压失败: %v", err)
 	}
 
 	fmt.Printf("✨ Go %s (%s) 解压成功!\n", version, arch)
+	// 询问是否设置环境变量
+	fmt.Print("\n🔧 是否立即将此版本设置为系统Go环境? [Y/n] ")
+	var answer string
+	fmt.Scanln(&answer)
+	if answer == "" || strings.ToLower(answer) == "y" {
+		if err := SetAsCurrentGo(targetDir); err != nil {
+			return "", fmt.Errorf("❌ 设置环境变量失败: %v", err)
+		}
+		fmt.Printf("✅ 环境变量设置成功\n")
+		fmt.Printf("⚠️ 注意：某些程序可能需要重启才能识别新的环境变量：\n")
+		fmt.Printf("   • 终端 (PowerShell, CMD 等)\n")
+		fmt.Printf("   • 编辑器 (VSCode, IntelliJ IDEA 等)\n")
+		fmt.Printf("   • 其他使用Go环境的应用\n")
+	}
 	return targetDir, nil
 }

@@ -149,14 +149,18 @@ func (l *VersionList) PrintVersionList() {
 		if path, ok := l.InstalledPaths[l.CurrentVersion]; ok {
 			fmt.Printf("   • 安装路径: %s\n", path)
 		}
-		// 获取GOPATH和GOROOT
+		// 获取GOPATH、GOROOT、GOARCH
 		gopath := os.Getenv("GOPATH")
 		goroot := os.Getenv("GOROOT")
+		goarch := os.Getenv("GOARCH")
 		if goroot != "" {
 			fmt.Printf("   • GOROOT: %s\n", goroot)
 		}
 		if gopath != "" {
 			fmt.Printf("   • GOPATH: %s\n", gopath)
+		}
+		if goarch != "" {
+			fmt.Printf("   • GOARCH: %s\n", goarch)
 		}
 		fmt.Println(strings.Repeat("-", 80))
 	}
