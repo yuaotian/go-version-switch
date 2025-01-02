@@ -78,10 +78,10 @@ go-version-switch -rollback
 go-version-switch -install 1.20.1 -arch arm64
 
 # 强制更新版本列表
-go-version-switch -update -force
+go-version-switch  -list -update 
 
 # 查看详细版本信息
-go-version-switch -list -verbose
+go-version-switch -list 
 ```
 
 ## 📁 项目结构

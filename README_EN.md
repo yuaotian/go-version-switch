@@ -78,10 +78,10 @@ go-version-switch -rollback
 go-version-switch -install 1.20.1 -arch arm64
 
 # Force update version list
-go-version-switch -update -force
+go-version-switch -list -update 
 
 # View detailed version information
-go-version-switch -list -verbose
+go-version-switch -list 
 ```
 
 ## 📁 Project Structure

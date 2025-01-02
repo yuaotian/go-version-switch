@@ -123,6 +123,8 @@ func DownloadAndExtract(release *GoRelease, baseDir string) error {
 		fmt.Printf("   • 终端 (PowerShell, CMD 等)\n")
 		fmt.Printf("   • 编辑器 (VSCode, IntelliJ IDEA 等)\n")
 		fmt.Printf("   • 其他使用Go环境的应用\n")
+		fmt.Println("  • 如果环境变量设置失败，请手动设置GOROOT环境变量")
+		fmt.Println("🔄 如果需要回滚，请使用：go-version-switch -rollback")
 	}
 
 	return nil
@@ -230,46 +232,35 @@ func unzip(src, dest string) error {
 		return fmt.Errorf("打开zip文件失败: %v", err)
 	}
 	defer r.Close()
+
 	// 获取压缩包中的文件总数
 	totalFiles := len(r.File)
 	fmt.Printf("📦 正在解压文件 (共 %d 个文件)...\n", totalFiles)
-
-	if err != nil {
-		return err
-	}
-	defer r.Close()
-
-	// 计算总大小
-	var totalSize int64
-	for _, f := range r.File {
-		totalSize += int64(f.UncompressedSize64)
-	}
 
 	// 创建目标目录
 	if err := os.MkdirAll(dest, 0755); err != nil {
 		return err
 	}
 
-	// 用于跟踪已解压大小
-	var processedSize int64
-	lastPercent := 0
+	// 遍历压缩文件
+	for i, f := range r.File {
+		// 处理文件路径，移除第一级 "go/" 目录
+		fpath := strings.TrimPrefix(f.Name, "go/")
 
-	for _, f := range r.File {
-		// 构建完整的目标路径
-		fpath := filepath.Join(dest, f.Name)
+		// 构建目标路径
+		fpath = filepath.Join(dest, fpath)
 
-		// 检查路径是否在目标目录内（防止 zip slip 漏洞）
-		if !strings.HasPrefix(fpath, filepath.Clean(dest)+string(os.PathSeparator)) {
-			return fmt.Errorf("非法的文件路径: %s", fpath)
-		}
+		// 显示进度
+		fmt.Printf("\r📦 解压进度: %d/%d", i+1, totalFiles)
 
+		// 如果是目录，创建它
 		if f.FileInfo().IsDir() {
-			os.MkdirAll(fpath, 0755)
+			os.MkdirAll(fpath, os.ModePerm)
 			continue
 		}
 
 		// 确保父目录存在
-		if err := os.MkdirAll(filepath.Dir(fpath), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(fpath), os.ModePerm); err != nil {
 			return err
 		}
 
@@ -279,42 +270,22 @@ func unzip(src, dest string) error {
 			return err
 		}
 
+		// 打开压缩文件
 		rc, err := f.Open()
 		if err != nil {
 			outFile.Close()
 			return err
 		}
 
-		// 创建一个代理 reader 来跟踪进度
-		reader := &ProgressReader{
-			Reader: rc,
-			OnProgress: func(n int64) {
-				processedSize += n
-				percent := int(float64(processedSize) / float64(totalSize) * 100)
-
-				// 每增加1%才更新显示
-				if percent > lastPercent {
-					lastPercent = percent
-					// 清除当前行
-					fmt.Printf("\r📦 正在解压文件... [%-50s] %d%%",
-						strings.Repeat("█", percent/2)+strings.Repeat("░", 50-percent/2),
-						percent)
-				}
-			},
-		}
-
-		_, err = io.Copy(outFile, reader)
-
+		// 复制内容
+		_, err = io.Copy(outFile, rc)
 		outFile.Close()
 		rc.Close()
-
 		if err != nil {
 			return err
 		}
 	}
-
-	// 完成后换行
-	fmt.Println()
+	fmt.Println() // 进度显示完成后换行
 	return nil
 }
 

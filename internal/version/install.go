@@ -189,8 +189,9 @@ func extractGo(zipPath, version, arch string) (string, error) {
 	if err := unzip(zipPath, targetDir); err != nil {
 		return "", fmt.Errorf("❌ 解压失败: %v", err)
 	}
-
+	fmt.Printf("✅ 解压完成，安装目录: %s\n", targetDir)
 	fmt.Printf("✨ Go %s (%s) 解压成功!\n", version, arch)
+	
 	// 询问是否设置环境变量
 	fmt.Print("\n🔧 是否立即将此版本设置为系统Go环境? [Y/n] ")
 	var answer string
@@ -204,6 +205,10 @@ func extractGo(zipPath, version, arch string) (string, error) {
 		fmt.Printf("   • 终端 (PowerShell, CMD 等)\n")
 		fmt.Printf("   • 编辑器 (VSCode, IntelliJ IDEA 等)\n")
 		fmt.Printf("   • 其他使用Go环境的应用\n")
+		fmt.Println("  • 如果环境变量设置失败，请手动设置GOROOT环境变量")
+		fmt.Println("🔄 如果需要回滚，请使用：go-version-switch -rollback")
+
+
 	}
 	return targetDir, nil
 }
@@ -278,11 +283,11 @@ func (h *LocalFileHandler) handleExistingFile() error {
 
 	if err := verifier.Verify(); err == nil {
 		fmt.Println("✅ 本地文件验证成功，将直接使用")
-		extractDir, err := extractGo(h.LocalPath, h.Opts.Version, h.Opts.Arch)
+		_, err := extractGo(h.LocalPath, h.Opts.Version, h.Opts.Arch)
 		if err != nil {
-			return fmt.Errorf("解压失败: %v", err)
+			return fmt.Errorf("%v", err)
 		}
-		fmt.Printf("✅ 解压完成，安装目录: %s\n", extractDir)
+		
 		return nil
 	} else {
 		fmt.Printf("⚠️ 本地文件验证失败: %v\n", err)
@@ -294,7 +299,7 @@ func (h *LocalFileHandler) handleExistingFile() error {
 
 func (h *LocalFileHandler) handleNewDownload() error {
 	if err := DownloadAndExtract(h.TargetRelease, h.BaseDir); err != nil {
-		return fmt.Errorf("安装失败: %v", err)
+		return fmt.Errorf("%v", err)
 	}
 	return nil
 }

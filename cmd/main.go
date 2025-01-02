@@ -37,7 +37,7 @@ var commands = []Command{
 	{
 		Name:        "update",
 		Description: "强制更新可用的Go版本列表",
-		Example:     "go-version-switch -update",
+		Example:     "go-version-switch -list -update",
 	},
 	{
 		Name:        "install",
@@ -174,7 +174,8 @@ func main() {
 	if listFlag {
 		list, err := version.GetVersionList(baseDir, updateFlag)
 		if err != nil {
-			fmt.Printf("获取版本列表失败: %v\n", err)
+			fmt.Printf("获取版本列表失败: ")
+			fmt.Println(err)
 			os.Exit(1)
 		}
 		list.PrintVersionList()
@@ -188,7 +189,8 @@ func main() {
 			Arch:    archFlag,
 		}
 		if err := version.InstallVersion(baseDir, opts); err != nil {
-			fmt.Printf("安装失败: %v\n", err)
+			fmt.Printf("安装失败: ")
+			fmt.Println(err)
 			os.Exit(1)
 		}
 		return
@@ -201,7 +203,8 @@ func main() {
 			Arch:    archFlag,
 		}
 		if err := version.UseVersion(baseDir, opts); err != nil {
-			fmt.Printf("切换版本失败: %v\n", err)
+			fmt.Printf("切换版本失败: ")
+			fmt.Println(err)
 			os.Exit(1)
 		}
 		return

@@ -24,7 +24,41 @@ type EnvBackup struct {
 
 // SetAsCurrentGo 设置指定目录为当前Go环境（向后兼容）
 func SetAsCurrentGo(goRoot string) error {
-	return SetupGoEnvironment(goRoot)
+	// 先备份当前环境
+	fmt.Println("📦 正在备份当前环境变量...")
+	if err := backupEnvironment(); err != nil {
+		return fmt.Errorf("备份环境变量失败: %v", err)
+	}
+	fmt.Println("✅ 环境变量备份完成")
+
+	// 尝试设置新环境
+	if err := SetupGoEnvironment(goRoot); err != nil {
+		fmt.Println("❌ 设置新环境失败，准备回滚...")
+
+		// 如果设置失败，尝试回滚
+		backupDir := filepath.Join(filepath.Dir(os.Args[0]), "data", "backup_env")
+		fmt.Printf("🔍 正在查找最新的备份文件 (目录: %s)...\n", backupDir)
+
+		latestBackup, rollbackErr := GetLatestBackup(backupDir)
+		if rollbackErr != nil {
+			fmt.Println("❌ 无法找到有效的备份文件")
+			return fmt.Errorf("设置环境变量失败且无法回滚: %v (回滚错误: %v)", err, rollbackErr)
+		}
+
+		fmt.Printf("📂 找到最新备份文件: %s\n", latestBackup)
+		fmt.Println("🔄 开始执行环境变量回滚...")
+
+		if rollbackErr := RestoreEnvironment(latestBackup); rollbackErr != nil {
+			fmt.Println("❌ 回滚操作失败")
+			return fmt.Errorf("设置环境变量失败且回滚失败: %v (回滚错误: %v)", err, rollbackErr)
+		}
+
+		fmt.Println("✅ 环境变量已成功回滚到之前的配置")
+		return fmt.Errorf("设置环境变量失败，已回滚到之前的配置: %v", err)
+	}
+
+	fmt.Println("✅ 新环境设置成功")
+	return nil
 }
 
 // SetupGoEnvironment 设置Go环境变量
@@ -43,7 +77,7 @@ func SetupGoEnvironment(newGoRoot string) error {
 	if err != nil {
 		fmt.Printf("警告: 检测现有Go安装时出错: %v\n", err)
 	} else if existingGoRoot != "" {
-		fmt.Printf("发现现有Go安装: %s\n", existingGoRoot)
+		fmt.Printf("🔍 发现现有Go安装: %s\n", existingGoRoot)
 		// 备份当前环境变量
 		if err := backupEnvironment(); err != nil {
 			fmt.Printf("警告: 备份环境变量失败: %v\n", err)
@@ -84,8 +118,7 @@ func SetupGoEnvironment(newGoRoot string) error {
 		return fmt.Errorf("更新PATH失败: %v", err)
 	}
 
-	// 通知用户
-	notifyUser()
+	
 	return nil
 }
 
@@ -193,7 +226,7 @@ func manageGoRoot(goRoot string) error {
 		return fmt.Errorf("更新当前进程GOROOT失败: %v", err)
 	}
 
-	fmt.Println("✅ GOROOT环境变量已更新")
+	fmt.Printf("✅ GOROOT环境变量已更新: %s\n", goRoot)
 	return nil
 }
 
@@ -240,20 +273,11 @@ func manageGoPath() error {
 		return fmt.Errorf("更新当前进程PATH失败: %v", err)
 	}
 
-	fmt.Println("✅ PATH环境变量已更新（Go目录已移至最前）")
+	fmt.Println("✅ PATH环境变量已更新（Go目录已移至系统PATH最前）")
 	return nil
 }
 
-// notifyUser 通知用户重启相关程序
-func notifyUser() {
-	fmt.Println("\n✨ Go环境变量设置完成！")
-	fmt.Println("\n⚠️ 请重启以下程序以使环境变量生效：")
-	fmt.Println("1. Visual Studio Code")
-	fmt.Println("2. IntelliJ IDEA")
-	fmt.Println("3. 终端 (Terminal)")
-	fmt.Println("4. PowerShell")
-	fmt.Println("\n重启后，请在终端中运行 'go version' 验证安装是否成功")
-}
+
 
 // validateGoRootPath 验证Go根目录路径
 func validateGoRootPath(goRoot string) error {
