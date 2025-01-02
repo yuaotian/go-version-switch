@@ -4,179 +4,171 @@
 
 [![Release](https://img.shields.io/github/v/release/yuaotian/go-version-switch?style=flat-square&logo=github&color=blue)](https://github.com/yuaotian/go-version-switch/releases/latest)
 [![Go Version](https://img.shields.io/badge/go-%3E%3D%201.16-blue)](https://img.shields.io/badge/go-%3E%3D%201.16-blue)
-[![Release Build](https://github.com/yuaotian/go-version-switch/actions/workflows/release.yml/badge.svg)](https://github.com/yuaotian/go-version-switch/actions/workflows/release.yml)
+[![Release Build](https://github.com/{owner}/{repo}/actions/workflows/release.yml/badge.svg)](https://github.com/{owner}/{repo}/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
-🔄 一个简单的 Go 版本管理工具，专为 Windows 系统打造
+🔄 A simple  Go version management tool designed for Windows
 
-[English](./README_EN.md) | 简体中文
+[简体中文](./README_CN.md) | English
 
 </div>
 
-## ✨ 特性
+## ✨ Features
 
-- 🔍 实时显示当前 Go 版本信息
-- 📋 管理多个已安装的 Go 版本
-- ⬇️ 自动下载安装官方发布版本
-- 🔄 快速切换不同 Go 版本
-- ⚙️ 智能管理系统环境变量
-- 💾 支持环境配置备份恢复
-- 🔒 安全的环境变量回滚机制
-- 🌐 支持多架构（x86/x64/arm/arm64）
+- 🔍 Real-time display of current Go version information
+- 📋 Manage multiple installed Go versions
+- ⬇️ Automatic download and installation of official releases
+- 🔄 Quick switching between different Go versions
+- ⚙️ Smart system environment variable management
+- 💾 Support for environment configuration backup and restore
+- 🔒 Secure environment variable rollback mechanism
+- 🌐 Multi-architecture support (x86/x64/arm/arm64)
 
-## 🚀 快速开始
+## 🚀 Quick Start
 
-### 📥 安装方式
+### 📥 Installation
 
-#### 方法 1：直接下载
+#### Method 1: Direct Download
 
-从 [Releases](https://github.com/yuaotian/go-version-switch/releases) 页面下载最新版本。
+Download the latest version from the [Releases](https://github.com/yuaotian/go-version-switch/releases) page.
 
-#### 方法 2：从源码编译
+#### Method 2: Build from Source
 
 ```bash
-# 克隆仓库
+# Clone repository
 git clone https://github.com/yuaotian/go-version-switch.git
 cd go-version-switch
 
-# 编译
+# Build
 go build -o go-version-switch.exe ./cmd
 
-# 将可执行文件添加到 PATH 环境变量
-# 建议将编译后的文件复制到 C:\Program Files\go-version-switch\ 目录下
+# Add executable to PATH
+# Recommended to copy the compiled file to C:\Program Files\go-version-switch\
 ```
 
-### 🎯 基础使用
+### 🎯 Basic Usage
 
 ```bash
-# 查看帮助信息
+# View help information
 go-version-switch -h
 
-# 查看当前版本
+# Check current version
 go-version-switch -version
 
-# 列出所有已安装版本
+# List all installed versions
 go-version-switch -list
 
-# 更新可用版本列表
-go-version-switch -update
+# List all versions before update version list
+go-version-switch -list -update
 
-# 安装特定版本
+# Install specific version
+go-version-switch -install 1.19.5 
+
+# Install specific version and architecture
 go-version-switch -install 1.19.5 -arch x64
 
-# 切换到指定版本
+# Switch to specified version
 go-version-switch -use 1.19.5
 
-# 回滚环境变量配置
+# Rollback environment variable configuration
 go-version-switch -rollback
 ```
 
-### 🛠️ 高级用法
 
-```bash
-# 安装特定架构的版本
-go-version-switch -install 1.20.1 -arch arm64
 
-# 强制更新版本列表
-go-version-switch  -list -update 
-
-# 查看详细版本信息
-go-version-switch -list 
-```
-
-## 📁 项目结构
+## 📁 Project Structure
 
 ```
 go-version-switch/
 ├── 📂 cmd/
-│   └── main.go                 # 程序入口
+│   └── main.go                 # Program entry
 ├── 📂 internal/
-│   ├── config/                # 配置管理
-│   │   └── config.go         # 配置处理
-│   └── version/              # 版本管理
-│       ├── common.go        # 通用函数
-│       ├── download.go      # 下载功能
-│       ├── env.go          # 环境变量处理
-│       ├── goversion.go    # 版本信息
-│       ├── install.go      # 安装逻辑
-│       ├── list.go        # 版本列表
-│       ├── releases.go    # 发布管理
-│       └── version.go     # 版本控制
+│   ├── config/                # Configuration management
+│   │   └── config.go         # Configuration handling
+│   └── version/              # Version management
+│       ├── common.go        # Common functions
+│       ├── download.go      # Download functionality
+│       ├── env.go          # Environment variable handling
+│       ├── goversion.go    # Version information
+│       ├── install.go      # Installation logic
+│       ├── list.go        # Version listing
+│       ├── releases.go    # Release management
+│       └── version.go     # Version control
 ├── 📂 bin/
-│   └── data/              # 运行时数据
-│       └── config/        # 配置文件
-├── 📄 go.mod              # 依赖管理
-├── 📄 go.sum              # 依赖校验
-└── 📝 README.md           # 项目文档
+│   └── data/              # Runtime data
+│       └── config/        # Configuration files
+├── 📄 go.mod              # Dependency management
+├── 📄 go.sum              # Dependency verification
+└── 📝 README.md           # Project documentation
 ```
 
-## ⚙️ 系统要求
+## ⚙️ System Requirements
 
 - Windows 10/11
-- Go 1.16+（仅编译时需要）
-- 管理员权限（用于修改环境变量）
-- 稳定的网络连接（下载新版本时需要）
+- Go 1.16+ (only for compilation)
+- Administrator privileges (for modifying environment variables)
+- Stable network connection (for downloading new versions)
 
-## 🔧 故障排除
+## 🔧 Troubleshooting
 
-### 常见问题
+### Common Issues
 
-1. **权限不足**
+1. **Insufficient Permissions**
    ```bash
-   错误：需要管理员权限
-   解决：以管理员身份运行命令提示符
+   Error: Administrator privileges required
+   Solution: Run command prompt as administrator
    ```
 
-2. **下载失败**
+2. **Download Failure**
    ```bash
-   错误：下载超时
-   解决：检查网络连接或使用代理
+   Error: Download timeout
+   Solution: Check network connection or use proxy
    ```
 
-3. **版本切换失败**
+3. **Version Switch Failure**
    ```bash
-   错误：环境变量更新失败
-   解决：使用 -rollback 命令恢复之前的配置
+   Error: Environment variable update failed
+   Solution: Use -rollback command to restore previous configuration
    ```
 
-## 👨‍💻 开发者指南
+## 👨‍💻 Developer Guide
 
-### 构建项目
+### Building the Project
 
 ```bash
-# 安装依赖
+# Install dependencies
 go mod download
 
-# 运行测试
+# Run tests
 go test ./...
 
-# 构建和测试
+# Build and test
 go build -v -o bin/go-version-switch.exe ./cmd/main.go && ./bin/go-version-switch -install 1.23.4 -arch x86
 ```
 
-### 代码贡献
+### Contributing
 
-1. Fork 项目
-2. 创建特性分支
-3. 提交更改
-4. 推送到分支
-5. 创建 Pull Request
+1. Fork the project
+2. Create your feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
 
-## 📌 注意事项
+## 📌 Important Notes
 
-1. 🔐 需要管理员权限来修改系统环境变量
-2. 🔄 切换版本后需要重启终端或 IDE
-3. 💾 定期备份环境变量配置
-4. ⚠️ 确保网络连接稳定
-5. 📦 不要手动修改工具的数据目录
+1. 🔐 Administrator privileges required for modifying system environment variables
+2. 🔄 Terminal or IDE restart required after version switch
+3. 💾 Regular backup of environment variable configuration recommended
+4. ⚠️ Ensure stable network connection
+5. 📦 Do not manually modify the tool's data directory
 
-## 🤝 贡献指南
+## 🤝 Contribution Guidelines
 
-- 提交 Issue 前请先搜索是否已存在类似问题
-- Pull Request 请提供详细的描述
-- 遵循项目的代码规范
-- 确保提交的代码已经过测试
+- Search for existing issues before submitting a new one
+- Provide detailed descriptions for Pull Requests
+- Follow project code standards
+- Ensure submitted code is tested
 
-## 📄 开源协议
+## 📄 License
 
-本项目采用 [MIT](./LICENSE) 开源协议。 
+This project is licensed under the [MIT](./LICENSE) License. 
