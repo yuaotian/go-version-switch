@@ -48,6 +48,30 @@ func SetupGoEnvironment(newGoRoot string) error {
 		}
 	}
 
+	// 根据目录名判断架构
+	arch := "amd64" // 默认值
+	if strings.Contains(strings.ToLower(newGoRoot), "-x86") {
+		arch = "386"
+	} else if strings.Contains(strings.ToLower(newGoRoot), "-arm64") {
+		arch = "arm64"
+	} else if strings.Contains(strings.ToLower(newGoRoot), "-arm") {
+		arch = "arm"
+	}
+
+	// 设置GOARCH
+	cmd := exec.Command("REG", "ADD", "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+		"/v", "GOARCH", "/t", "REG_SZ", "/d", arch, "/f")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("设置GOARCH失败: %v\n%s", err, output)
+	}
+
+	// 更新当前进程的GOARCH
+	if err := os.Setenv("GOARCH", arch); err != nil {
+		return fmt.Errorf("更新当前进程GOARCH失败: %v", err)
+	}
+
+	fmt.Printf("✅ GOARCH环境变量已更新为: %s\n", arch)
+
 	// 设置GOROOT
 	if err := manageGoRoot(newGoRoot); err != nil {
 		return fmt.Errorf("设置GOROOT失败: %v", err)
@@ -71,7 +95,7 @@ func isValidGoRoot(dir string) bool {
 // backupEnvironment 备份环境变量
 func backupEnvironment() error {
 	// 创建备份目录
-	backupDir := filepath.Join(filepath.Dir(os.Args[0]), "backup")
+	backupDir := filepath.Join(filepath.Dir(os.Args[0]), "data", "backup_env")
 	if err := os.MkdirAll(backupDir, 0755); err != nil {
 		return fmt.Errorf("创建备份目录失败: %v", err)
 	}
@@ -175,14 +199,17 @@ func manageGoPath() error {
 
 	currentPath := strings.TrimSpace(matches[1])
 
-	// 检查是否已包含%GOROOT%\bin
-	if strings.Contains(currentPath, "%GOROOT%\\bin") {
-		fmt.Println("✅ PATH已包含Go路径")
-		return nil
+	// 移除现有的 %GOROOT%\bin（如果存在）
+	pathParts := strings.Split(currentPath, string(os.PathListSeparator))
+	newParts := make([]string, 0)
+	for _, part := range pathParts {
+		if !strings.Contains(strings.ToLower(part), "goroot") {
+			newParts = append(newParts, part)
+		}
 	}
 
-	// 添加%GOROOT%\bin到PATH
-	newPath := currentPath + string(os.PathListSeparator) + "%GOROOT%\\bin"
+	// 将 %GOROOT%\bin 添加到 PATH 的最前面
+	newPath := "%GOROOT%\\bin" + string(os.PathListSeparator) + strings.Join(newParts, string(os.PathListSeparator))
 
 	// 更新系统PATH
 	cmd = exec.Command("REG", "ADD", "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
@@ -196,10 +223,7 @@ func manageGoPath() error {
 		return fmt.Errorf("更新当前进程PATH失败: %v", err)
 	}
 
-	// 广播环境变量更改消息
-	broadcastEnvChange()
-
-	fmt.Println("✅ PATH环境变量已更新")
+	fmt.Println("✅ PATH环境变量已更新（Go目录已移至最前）")
 	return nil
 }
 

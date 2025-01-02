@@ -64,9 +64,11 @@ func LoadConfig() (*Config, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			// 如果配置文件不存在，创建默认配置
+			defaultTime := time.Date(2024, 1, 1, 23, 59, 59, 0, time.Local)
 			config := &Config{
-				BaseDir:  filepath.Join(filepath.Dir(os.Args[0]), "data", "go-version"),
-				Versions: make(map[string]string),
+				BaseDir:    filepath.Join(filepath.Dir(os.Args[0]), "data", "go-version"),
+				Versions:   make(map[string]string),
+				LastUpdate: CustomTime{Time: defaultTime},
 			}
 			return config, SaveConfig(config)
 		}
@@ -122,17 +124,4 @@ func (c *Config) SetCurrentVersion(version string) error {
 	return SaveConfig(c)
 }
 
-// GetDownloadDir 获取下载目录
-func GetDownloadDir() string {
-	return filepath.Join(dataDir, "down")
-}
 
-// GetVersionDir 根据版本号获取安装目录
-func GetVersionDir(version string) string {
-	return filepath.Join(dataDir, "go-version", fmt.Sprintf("go-version-bits-%s", version))
-}
-
-// GetVersionPath 获取指定版本的安装路径
-func (c *Config) GetVersionPath(version string) string {
-	return c.Versions[version]
-}
