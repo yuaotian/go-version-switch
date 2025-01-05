@@ -247,7 +247,7 @@ func (l *VersionList) PrintVersionList() {
 		releases := versionGroups[version]
 		sort.Slice(releases, func(i, j int) bool {
 			archOrder := map[string]int{
-				"x86-64": 1,
+				"amd64": 1,
 				"x86":    2,
 				"ARM64":  3,
 				"ARM":    4,
@@ -285,7 +285,7 @@ func (l *VersionList) PrintVersionList() {
 			case "x86":
 				archIcon = "🖥️"
 				archDisplay = "x86/32位"
-			case "x86-64":
+			case "amd64":
 				archIcon = "💻"
 				archDisplay = "x64/64位"
 			case "ARM64":

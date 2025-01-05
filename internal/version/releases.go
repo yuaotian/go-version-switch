@@ -23,7 +23,12 @@ func FetchVersions() ([]*GoRelease, error) {
 	if err != nil {
 		return nil, fmt.Errorf("获取版本列表失败: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			fmt.Println("关闭响应失败: ", err)
+		}
+	}(resp.Body)
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -54,9 +59,14 @@ func parseVersions(html string) ([]*GoRelease, error) {
 		filename := match[2]    // 文件名
 		kind := match[3]        // 类型 (Archive/Installer)
 		os := match[4]          // 操作系统
-		arch := match[5]        // 架构
-		size := match[6]        // 大小
-		sha256 := match[7]      // SHA256
+		var arch string
+		if strings.Contains(match[5], "x86-64") {
+			arch = "amd64"
+		} else {
+			arch = match[5]
+		}
+		size := match[6]   // 大小
+		sha256 := match[7] // SHA256
 
 		// 解析版本号
 		versionRegex := regexp.MustCompile(`go(\d+\.\d+\.\d+)`)
@@ -84,11 +94,11 @@ func parseVersions(html string) ([]*GoRelease, error) {
 			case strings.Contains(strings.ToLower(release.Arch), "386"):
 				release.Arch = "x86"
 			case strings.Contains(strings.ToLower(release.Arch), "amd64"):
-				release.Arch = "x86-64"
+				release.Arch = "amd64"
 			case strings.Contains(strings.ToLower(release.Arch), "arm64"):
-				release.Arch = "ARM64"
+				release.Arch = "arm64"
 			case strings.Contains(strings.ToLower(release.Arch), "arm"):
-				release.Arch = "ARM"
+				release.Arch = "arm"
 			}
 			releases = append(releases, release)
 		}
@@ -100,37 +110,6 @@ func parseVersions(html string) ([]*GoRelease, error) {
 
 	fmt.Printf("解析到 %d 个Windows版本\n", len(releases))
 	return releases, nil
-}
-
-// GetLatestVersion 获取最新的稳定版本
-func GetLatestVersion() (string, error) {
-	releases, err := FetchVersions()
-	if err != nil {
-		return "", err
-	}
-
-	if len(releases) == 0 {
-		return "", fmt.Errorf("未找到可用版本")
-	}
-
-	return releases[0].Version, nil
-}
-
-// GetVersionInfo 获取指定版本的详细信息
-func GetVersionInfo(version string) (*GoRelease, error) {
-	releases, err := FetchVersions()
-	if err != nil {
-		return nil, err
-	}
-
-	version = ParseVersion(version)
-	for _, release := range releases {
-		if release.Version == version {
-			return release, nil
-		}
-	}
-
-	return nil, fmt.Errorf("未找到版本 %s", version)
 }
 
 // SaveVersionsCache 保存版本信息到缓存
@@ -161,11 +140,11 @@ func LoadVersionsCache(cacheFile string) ([]*GoRelease, error) {
 		case strings.Contains(strings.ToLower(release.Arch), "386"):
 			release.Arch = "x86"
 		case strings.Contains(strings.ToLower(release.Arch), "amd64"):
-			release.Arch = "x86-64"
+			release.Arch = "amd64"
 		case strings.Contains(strings.ToLower(release.Arch), "arm64"):
-			release.Arch = "ARM64"
+			release.Arch = "arm64"
 		case strings.Contains(strings.ToLower(release.Arch), "arm"):
-			release.Arch = "ARM"
+			release.Arch = "arm"
 		}
 	}
 
