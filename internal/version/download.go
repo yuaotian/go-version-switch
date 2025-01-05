@@ -40,10 +40,10 @@ func DownloadAndExtract(release *GoRelease, baseDir string) error {
 	if err := os.MkdirAll(versionDir, 0755); err != nil {
 		return fmt.Errorf("📁 创建版本目录失败: %v", err)
 	}
-	fmt.Println("输入架构 ",release.Arch)
+	//fmt.Println("输入架构 ",release.Arch)
 	// 生成标准化的文件名
 	arch := normalizeArch(release.Arch)
-	fmt.Println("标准化架构 ",arch)
+	//fmt.Println("标准化架构 ",arch)
 	if arch == "" {
 		return fmt.Errorf("不支持的架构: %s", release.Arch)
 	}

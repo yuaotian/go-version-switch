@@ -79,9 +79,9 @@ func UseVersion(baseDir string, opts InstallOptions) error {
     }
 
     // 转换架构名称
-    fmt.Println("输入架构 ",opts.Arch)
+    //fmt.Println("输入架构 ",opts.Arch)
     arch := normalizeArch(opts.Arch)
-    fmt.Println("标准化架构 ",arch)
+   // fmt.Println("标准化架构 ",arch)
     if arch == "" {
         return fmt.Errorf("不支持的架构: %s", opts.Arch)
     }
@@ -212,9 +212,9 @@ func prepareInstallEnvironment(baseDir string, opts *InstallOptions) error {
     }
 
     // 转换架构名称
-    fmt.Println("输入架构 ",opts.Arch)
+   // fmt.Println("输入架构 ",opts.Arch)
     arch := normalizeArch(opts.Arch)
-    fmt.Println("标准化架构 ",arch)
+   // fmt.Println("标准化架构 ",arch)
     if arch == "" {
         return fmt.Errorf("不支持的架构: %s", opts.Arch)
     }
@@ -229,10 +229,10 @@ func findTargetRelease(baseDir string, opts InstallOptions) (*GoRelease, error) 
     if err != nil {
         return nil, fmt.Errorf("获取版本列表失败: %v", err)
     }
-    fmt.Println("输入架构 ",opts.Arch)
+   // fmt.Println("输入架构 ",opts.Arch)
     // 查找指定版本和架构的发布版本
     arch := normalizeArch(opts.Arch)
-    fmt.Println("标准化架构 ",arch)
+   // fmt.Println("标准化架构 ",arch)
     for _, v := range list.Versions {
         if v.Version == opts.Version && strings.EqualFold(v.Arch, arch) {
             return v, nil
