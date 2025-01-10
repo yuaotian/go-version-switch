@@ -225,6 +225,28 @@ go build -ldflags="-X 'main.Version=v1.0.0'" -o bin/govs.exe ./cmd
 4. ⚠️ 保留本地安装包在 down/ 目录
 5. 📦 不要手动修改数据目录
 
+### 🔄 终端环境变量刷新方法
+
+在某些编辑器（如 VSCode、IntelliJ IDEA）的集成终端中，环境变量可能不会自动更新。您可以使用以下方法手动刷新：
+
+#### PowerShell 终端
+```powershell
+# 方法1：刷新环境变量
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
+# 方法2：使用 refreshenv 命令（需要安装 Chocolatey）
+refreshenv
+```
+
+#### CMD 终端
+```cmd
+# 方法1：使用 refreshenv（如果安装了 Chocolatey）
+refreshenv
+
+# 方法2：重新加载环境变量
+set PATH=%PATH%
+```
+
 ## 🤝 参与贡献
 
 - 提交前先检查现有问题

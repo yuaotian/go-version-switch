@@ -224,6 +224,28 @@ go build -ldflags="-X 'main.Version=v1.0.0'" -o bin/govs.exe ./cmd
 4. ⚠️ Keep local installation packages in down/ directory
 5. 📦 Don't manually modify data directory
 
+### 🔄 Terminal Environment Variable Refresh Methods
+
+In some editors (like VSCode, IntelliJ IDEA), the integrated terminal might not automatically update environment variables. You can use these methods to refresh manually:
+
+#### PowerShell Terminal
+```powershell
+# Method 1: Refresh environment variables
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
+# Method 2: Use refreshenv command (requires Chocolatey)
+refreshenv
+```
+
+#### CMD Terminal
+```cmd
+# Method 1: Use refreshenv (if Chocolatey is installed)
+refreshenv
+
+# Method 2: Reload environment variables
+set PATH=%PATH%
+```
+
 ## 🤝 Contributing
 
 - Check existing issues before submitting

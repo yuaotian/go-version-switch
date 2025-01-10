@@ -174,6 +174,17 @@ func findSimilarCommand(input string) string {
 	return ""
 }
 
+// printRefreshTips 打印环境变量刷新提示
+func printRefreshTips() {
+	fmt.Println("\n💡 如果终端环境变量未更新，请尝试以下方法手动刷新:")
+	fmt.Println("\n[PowerShell]")
+	fmt.Println("方法1: $env:Path = [System.Environment]::GetEnvironmentVariable(\"Path\",\"Machine\") + \";\" + [System.Environment]::GetEnvironmentVariable(\"Path\",\"User\")")
+	fmt.Println("方法2: refreshenv  # 需要安装 Chocolatey")
+	fmt.Println("\n[CMD]")
+	fmt.Println("方法1: refreshenv  # 需要安装 Chocolatey")
+	fmt.Println("方法2: set PATH=%PATH%")
+}
+
 func main() {
 	flag.Parse()
 
@@ -214,6 +225,7 @@ func main() {
 			fmt.Printf("切换架构失败: %v\n", err)
 			os.Exit(1)
 		}
+		printRefreshTips()
 		return
 	}
 
@@ -256,6 +268,7 @@ func main() {
 			fmt.Println(err)
 			os.Exit(1)
 		}
+		printRefreshTips()
 		return
 	}
 
@@ -270,6 +283,7 @@ func main() {
 			fmt.Println(err)
 			os.Exit(1)
 		}
+		printRefreshTips()
 		return
 	}
 }
@@ -299,5 +313,6 @@ func handleRollback() error {
 		return fmt.Errorf("回滚失败: %v", err)
 	}
 
+	printRefreshTips()
 	return nil
 }
