@@ -165,10 +165,18 @@ func main() {
 
 	// 如果没有指定任何命令，显示帮助信息
 	if !listFlag && !updateFlag && installFlag == "" && useFlag == "" && !rollbackFlag {
+		// 检查是否只有 -arch 参数
+		if archFlag != "" {
+			if err := version.HandleArchitectureSwitch(baseDir, archFlag); err != nil {
+				fmt.Printf("切换架构失败: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
 		printHelp()
 		return
 	}
-fmt.Println(`
+	fmt.Println(`
   ____        __     __            _               ____          _ _       _      
  / ___| ___   \ \   / /__ _ __ ___(_) ___  _ __   / ___|_      _(_) |_ ___| |__   
  | |  _ / _ \  \ \ / / _ \ '__/ __| |/ _ \| '_ \  \___ \ \ /\ / / | __/ __| '_ \  
