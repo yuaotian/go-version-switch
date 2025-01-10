@@ -7,7 +7,7 @@
 [![Release Build](https://github.com/yuaotian/go-version-switch/actions/workflows/release.yml/badge.svg)](https://github.com/yuaotian/go-version-switch/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
-🔄 一个简单的 Go 版本管理工具，专为 Windows 系统打造
+🔄 功能强大的 Go 版本管理工具，专为 Windows 系统打造
 
 [English](./README.md) | 简体中文
 
@@ -23,6 +23,9 @@
 - 💾 支持环境配置备份恢复
 - 🔒 安全的环境变量回滚机制
 - 🌐 支持多架构（x86/x64/arm/arm64）
+- 📦 本地安装包检测和使用
+- 🔧 自动目录完整性验证
+- 🔄 智能架构切换与本地包检测
 
 ## 🚀 快速开始
 
@@ -30,7 +33,28 @@
 
 #### 方法 1：直接下载
 
-从 [Releases](https://github.com/yuaotian/go-version-switch/releases) 页面下载最新版本。
+1. 从 [Releases](https://github.com/yuaotian/go-version-switch/releases) 页面下载最新版本
+2. 解压到指定目录（推荐：C:\Program Files\go-version-switch\）
+3. 添加到 PATH 环境变量：
+   ```powershell
+   # 添加到系统环境变量并重启终端
+   setx /M PATH "%PATH%;C:\Program Files\go-version-switch"
+   # 安装指定版本
+   govs.exe -install 1.23.4 -arch x64
+   # 切换到已安装版本
+   govs.exe -use 1.23.4
+   # 切换架构
+   govs.exe -arch x64
+   # 回滚环境变量
+   govs.exe -rollback
+   # 列出所有可用版本
+   govs.exe -list
+   # 强制更新版本列表
+   govs.exe -list -update
+   # 查看帮助信息
+   govs.exe -help
+
+   ```
 
 #### 方法 2：从源码编译
 
@@ -40,19 +64,13 @@ git clone https://github.com/yuaotian/go-version-switch.git
 cd go-version-switch
 
 # 编译
-go build -v -o bin/go-version-switch.exe ./cmd/main.go 
+go build -o bin/govs.exe ./cmd
 
-# 测试
-./bin/go-version-switch -install 1.23.4 -arch x86
+# 测试安装
+./bin/go-version-switch -install 1.23.4 -arch x64
 
-#编译+测试
-go build -v -o bin/go-version-switch.exe ./cmd/main.go && ./bin/go-version-switch -install 1.23.4 -arch x86
-
-
-# 将可执行文件添加到 PATH 环境变量
-# 建议将编译后的文件复制到 C:\Program Files\go-version-switch\ 目录下
-# 或者使用命令一键添加到PATH：
- setx /M PATH "%PATH%;C:\Program Files\go-version-switch"
+# 一键编译和测试
+go build -v -o bin/govs.exe ./cmd/main.go && ./bin/govs.exe -install 1.23.4 -arch x64
 ```
 
 ### 🎯 基础使用
@@ -61,31 +79,54 @@ go build -v -o bin/go-version-switch.exe ./cmd/main.go && ./bin/go-version-switc
 # 查看帮助信息
 go-version-switch -h
 
-# 查看当前版本
-go-version-switch -version
-
-# 列出所有已安装版本或更新版本列表
+# 列出所有可用版本
 go-version-switch -list
 
-# 列出所有版本之前强制更新版本列表
+# 强制更新版本列表
 go-version-switch -list -update
 
-# 安装特定版本
-go-version-switch -install 1.23.4
-
-# 安装特定版本和架构
+# 安装指定版本
 go-version-switch -install 1.23.4 -arch x64
 
-# 切换到本地已安装版本
+# 切换到已安装版本
 go-version-switch -use 1.23.4
 
-# 回滚环境变量配置
+# 直接切换架构
+go-version-switch -arch x64
+go-version-switch -arch x86
+
+# 回滚环境变量
 go-version-switch -rollback
 ```
 
+### 🔧 高级功能
+
+#### 架构管理
+```bash
+# 支持的架构列表
+x86, 386, 32       (32位)
+x64, amd64, x86-64 (64位)
+arm                (ARM)
+arm64              (ARM64)
+
+# 带本地包检测的架构切换
+go-version-switch -arch x64  # 自动查找并使用本地安装包
+```
+
+#### 本地包支持
+- 自动检测 down/ 目录中的安装包
+- 优先使用本地安装包
+- 安装前验证包完整性
+
+#### 环境变量管理
+- 修改前自动备份
+- 安全的回滚机制
+- 智能 PATH 管理
+- GOROOT 和 GOARCH 处理
+
 ## 📁 项目结构
 
-```md
+```
 go-version-switch/
 ├── 📂 cmd/
 │   └── main.go                 # 程序入口
@@ -96,15 +137,17 @@ go-version-switch/
 │       ├── common.go        # 通用函数
 │       ├── download.go      # 下载功能
 │       ├── env.go          # 环境变量处理
-│       ├── goversion.go    # 版本信息
 │       ├── install.go      # 安装逻辑
 │       ├── list.go        # 版本列表
 │       ├── releases.go    # 发布管理
 │       └── version.go     # 版本控制
-├── 📂 data/               # 运行时数据
-│   └── config/            # 配置文件
+├── 📂 bin/
+│   └── data/              # 运行时数据
+│       ├── go-version/   # Go 安装目录
+│       ├── down/         # 下载缓存
+│       ├── backup_env/   # 环境变量备份
+│       └── config/       # 配置文件
 ├── 📄 go.mod              # 依赖管理
-├── 📄 go.sum              # 依赖校验
 └── 📝 README.md           # 项目文档
 ```
 
@@ -112,34 +155,48 @@ go-version-switch/
 
 - Windows 10/11
 - Go 1.16+（仅编译时需要）
-- 管理员权限（用于修改环境变量）
-- 稳定的网络连接（下载新版本时需要）
+- 管理员权限
+- 网络连接（用于下载）
 
 ## 🔧 故障排除
 
 ### 常见问题
 
-1. **权限不足**
+1. **权限错误**
    ```bash
    错误：需要管理员权限
-   解决：以管理员身份运行命令提示符
+   解决：以管理员身份运行
    ```
 
-2. **下载失败**
+2. **下载问题**
    ```bash
-   错误：下载超时
-   解决：检查网络连接或使用代理
+   错误：下载失败
+   解决：
+   - 检查网络连接
+   - 使用 down/ 目录中的本地包
+   - 检查代理设置
    ```
 
 3. **版本切换失败**
    ```bash
    错误：环境变量更新失败
-   解决：使用 -rollback 命令恢复之前的配置
+   解决：
+   1. 使用 -rollback 恢复
+   2. 检查文件权限
+   3. 关闭所有 Go 进程
    ```
 
-## 👨‍💻 开发者指南
+4. **目录完整性**
+   ```bash
+   错误：Go 安装不完整
+   解决：
+   - 工具将自动尝试使用本地包修复
+   - 检查 down/ 目录中的安装包
+   ```
 
-### 构建项目
+## 👨‍💻 开发指南
+
+### 构建
 
 ```bash
 # 安装依赖
@@ -148,13 +205,13 @@ go mod download
 # 运行测试
 go test ./...
 
-# 构建和测试
-go build -v -o bin/go-version-switch.exe ./cmd/main.go && ./bin/go-version-switch -install 1.23.4 -arch x86
+# 带版本信息构建
+go build -ldflags="-X 'main.Version=v1.0.0'" -o bin/govs.exe ./cmd
 ```
 
-### 代码贡献
+### 贡献代码
 
-1. Fork 项目
+1. Fork 仓库
 2. 创建特性分支
 3. 提交更改
 4. 推送到分支
@@ -162,18 +219,19 @@ go build -v -o bin/go-version-switch.exe ./cmd/main.go && ./bin/go-version-switc
 
 ## 📌 注意事项
 
-1. 🔐 需要管理员权限来修改系统环境变量
-2. 🔄 切换版本后需要重启终端或 IDE
-3. 💾 定期备份环境变量配置
-4. ⚠️ 确保网络连接稳定
-5. 📦 不要手动修改工具的数据目录
+1. 🔐 环境变量修改需要管理员权限
+2. 🔄 版本切换后需要重启终端/IDE
+3. 💾 建议定期备份环境变量
+4. ⚠️ 保留本地安装包在 down/ 目录
+5. 📦 不要手动修改数据目录
 
-## 🤝 贡献指南
+## 🤝 参与贡献
 
-- 提交 Issue 前请先搜索是否已存在类似问题
-- Pull Request 请提供详细的描述
-- 遵循项目的代码规范
-- 确保提交的代码已经过测试
+- 提交前先检查现有问题
+- 遵循代码风格
+- 包含测试代码
+- 更新相关文档
+- 提供详细的 PR 描述
 
 ## 📄 开源协议
 

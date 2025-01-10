@@ -4,12 +4,12 @@
 
 [![Release](https://img.shields.io/github/v/release/yuaotian/go-version-switch?style=flat-square&logo=github&color=blue)](https://github.com/yuaotian/go-version-switch/releases/latest)
 [![Go Version](https://img.shields.io/badge/go-%3E%3D%201.16-blue)](https://img.shields.io/badge/go-%3E%3D%201.16-blue)
-[![Release Build](https://github.com/{owner}/{repo}/actions/workflows/release.yml/badge.svg)](https://github.com/{owner}/{repo}/actions/workflows/release.yml)
+[![Release Build](https://github.com/yuaotian/go-version-switch/actions/workflows/release.yml/badge.svg)](https://github.com/yuaotian/go-version-switch/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
-🔄 A simple  Go version management tool designed for Windows
+🔄 Powerful Go Version Management Tool, Designed for Windows
 
-[简体中文](./README_CN.md) | English
+English | [简体中文](./README_CN.md)
 
 </div>
 
@@ -23,14 +23,37 @@
 - 💾 Support for environment configuration backup and restore
 - 🔒 Secure environment variable rollback mechanism
 - 🌐 Multi-architecture support (x86/x64/arm/arm64)
+- 📦 Local installation package detection and usage
+- 🔧 Automatic directory integrity verification
+- 🔄 Smart architecture switching and local package detection
 
 ## 🚀 Quick Start
 
-### 📥 Installation
+### 📥 Installation Methods
 
 #### Method 1: Direct Download
 
-Download the latest version from the [Releases](https://github.com/yuaotian/go-version-switch/releases) page.
+1. Download the latest version from [Releases](https://github.com/yuaotian/go-version-switch/releases)
+2. Extract to specified directory (recommended: C:\Program Files\go-version-switch\)
+3. Add to PATH environment variable:
+   ```powershell
+   # Add to system environment variables and restart terminal
+   setx /M PATH "%PATH%;C:\Program Files\go-version-switch"
+   # Install specific version
+   govs.exe -install 1.23.4 -arch x64
+   # Switch to installed version
+   govs.exe -use 1.23.4
+   # Switch architecture
+   govs.exe -arch x64
+   # Rollback environment variables
+   govs.exe -rollback
+   # List all available versions
+   govs.exe -list
+   # Force update version list
+   govs.exe -list -update
+   # View help information
+   govs.exe -help
+   ```
 
 #### Method 2: Build from Source
 
@@ -40,10 +63,13 @@ git clone https://github.com/yuaotian/go-version-switch.git
 cd go-version-switch
 
 # Build
-go build -o go-version-switch.exe ./cmd
+go build -o bin/govs.exe ./cmd
 
-# Add executable to PATH
-# Recommended to copy the compiled file to C:\Program Files\go-version-switch\
+# Test installation
+./bin/go-version-switch -install 1.23.4 -arch x64
+
+# One-click build and test
+go build -v -o bin/govs.exe ./cmd/main.go && ./bin/govs.exe -install 1.23.4 -arch x64
 ```
 
 ### 🎯 Basic Usage
@@ -52,29 +78,50 @@ go build -o go-version-switch.exe ./cmd
 # View help information
 go-version-switch -h
 
-# Check current version
-go-version-switch -version
-
-# List all installed versions
+# List all available versions
 go-version-switch -list
 
-# List all versions before update version list
+# Force update version list
 go-version-switch -list -update
 
 # Install specific version
-go-version-switch -install 1.19.5 
+go-version-switch -install 1.23.4 -arch x64
 
-# Install specific version and architecture
-go-version-switch -install 1.19.5 -arch x64
+# Switch to installed version
+go-version-switch -use 1.23.4
 
-# Switch to specified version
-go-version-switch -use 1.19.5
+# Direct architecture switching
+go-version-switch -arch x64
+go-version-switch -arch x86
 
-# Rollback environment variable configuration
+# Rollback environment variables
 go-version-switch -rollback
 ```
 
+### 🔧 Advanced Features
 
+#### Architecture Management
+```bash
+# Supported architecture list
+x86, 386, 32       (32-bit)
+x64, amd64, x86-64 (64-bit)
+arm                (ARM)
+arm64              (ARM64)
+
+# Architecture switching with local package detection
+go-version-switch -arch x64  # Automatically find and use local installation package
+```
+
+#### Local Package Support
+- Automatic detection of installation packages in down/ directory
+- Priority use of local installation packages
+- Package integrity verification before installation
+
+#### Environment Variable Management
+- Automatic backup before modification
+- Secure rollback mechanism
+- Smart PATH management
+- GOROOT and GOARCH handling
 
 ## 📁 Project Structure
 
@@ -84,21 +131,22 @@ go-version-switch/
 │   └── main.go                 # Program entry
 ├── 📂 internal/
 │   ├── config/                # Configuration management
-│   │   └── config.go         # Configuration handling
+│   │   └── config.go         # Configuration processing
 │   └── version/              # Version management
 │       ├── common.go        # Common functions
 │       ├── download.go      # Download functionality
 │       ├── env.go          # Environment variable handling
-│       ├── goversion.go    # Version information
 │       ├── install.go      # Installation logic
-│       ├── list.go        # Version listing
+│       ├── list.go        # Version list
 │       ├── releases.go    # Release management
 │       └── version.go     # Version control
 ├── 📂 bin/
 │   └── data/              # Runtime data
-│       └── config/        # Configuration files
+│       ├── go-version/   # Go installation directory
+│       ├── down/         # Download cache
+│       ├── backup_env/   # Environment variable backup
+│       └── config/       # Configuration files
 ├── 📄 go.mod              # Dependency management
-├── 📄 go.sum              # Dependency verification
 └── 📝 README.md           # Project documentation
 ```
 
@@ -106,34 +154,48 @@ go-version-switch/
 
 - Windows 10/11
 - Go 1.16+ (only for compilation)
-- Administrator privileges (for modifying environment variables)
-- Stable network connection (for downloading new versions)
+- Administrator privileges
+- Network connection (for downloads)
 
 ## 🔧 Troubleshooting
 
 ### Common Issues
 
-1. **Insufficient Permissions**
+1. **Permission Errors**
    ```bash
    Error: Administrator privileges required
-   Solution: Run command prompt as administrator
+   Solution: Run as administrator
    ```
 
-2. **Download Failure**
+2. **Download Issues**
    ```bash
-   Error: Download timeout
-   Solution: Check network connection or use proxy
+   Error: Download failed
+   Solution:
+   - Check network connection
+   - Use local package from down/ directory
+   - Check proxy settings
    ```
 
 3. **Version Switch Failure**
    ```bash
    Error: Environment variable update failed
-   Solution: Use -rollback command to restore previous configuration
+   Solution:
+   1. Use -rollback to restore
+   2. Check file permissions
+   3. Close all Go processes
    ```
 
-## 👨‍💻 Developer Guide
+4. **Directory Integrity**
+   ```bash
+   Error: Incomplete Go installation
+   Solution:
+   - Tool will automatically attempt to repair using local package
+   - Check installation packages in down/ directory
+   ```
 
-### Building the Project
+## 👨‍💻 Development Guide
+
+### Building
 
 ```bash
 # Install dependencies
@@ -142,33 +204,34 @@ go mod download
 # Run tests
 go test ./...
 
-# Build and test
-go build -v -o bin/go-version-switch.exe ./cmd/main.go && ./bin/go-version-switch -install 1.23.4 -arch x86
+# Build with version information
+go build -ldflags="-X 'main.Version=v1.0.0'" -o bin/govs.exe ./cmd
 ```
 
 ### Contributing
 
-1. Fork the project
-2. Create your feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+1. Fork repository
+2. Create feature branch
+3. Commit changes
+4. Push to branch
+5. Create Pull Request
 
-## 📌 Important Notes
+## 📌 Notes
 
-1. 🔐 Administrator privileges required for modifying system environment variables
-2. 🔄 Terminal or IDE restart required after version switch
-3. 💾 Regular backup of environment variable configuration recommended
-4. ⚠️ Ensure stable network connection
-5. 📦 Do not manually modify the tool's data directory
+1. 🔐 Environment variable modification requires administrator privileges
+2. 🔄 Terminal/IDE restart required after version switch
+3. 💾 Regular environment variable backup recommended
+4. ⚠️ Keep local installation packages in down/ directory
+5. 📦 Don't manually modify data directory
 
-## 🤝 Contribution Guidelines
+## 🤝 Contributing
 
-- Search for existing issues before submitting a new one
-- Provide detailed descriptions for Pull Requests
-- Follow project code standards
-- Ensure submitted code is tested
+- Check existing issues before submitting
+- Follow code style
+- Include test code
+- Update relevant documentation
+- Provide detailed PR description
 
 ## 📄 License
 
-This project is licensed under the [MIT](./LICENSE) License. 
+This project is licensed under the [MIT](./LICENSE) License.

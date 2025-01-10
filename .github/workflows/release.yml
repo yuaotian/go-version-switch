@@ -28,7 +28,7 @@ jobs:
       - name: Build
         run: |
           mkdir dist
-          go build -o ./dist/go-version-switch.exe ./cmd
+          go build -o ./dist/govs.exe ./cmd
         env:
           CGO_ENABLED: 0
           GOOS: windows
@@ -39,7 +39,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            ./dist/go-version-switch.exe
+            ./dist/govs.exe
           draft: false
           prerelease: false
           generate_release_notes: true

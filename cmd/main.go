@@ -24,6 +24,7 @@ var (
 	useFlag      string
 	archFlag     string
 	rollbackFlag bool
+	helpFlag     bool
 	baseDir      string
 )
 
@@ -54,6 +55,11 @@ var commands = []Command{
 		Description: "回滚到上一次的环境变量配置",
 		Example:     "go-version-switch -rollback",
 	},
+	{
+		Name:        "help",
+		Description: "查看帮助信息",
+		Example:     "go-version-switch -help",
+	},
 }
 
 func init() {
@@ -82,26 +88,58 @@ func printHelp() {
  | |  _ / _ \  \ \ / / _ \ '__/ __| |/ _ \| '_ \  \___ \ \ /\ / / | __/ __| '_ \  
  | |_| | (_) |  \ V /  __/ |  \__ \ | (_) | | | |  ___) \ V  V /| | || (__| | | | 
   \____|\___/    \_/ \___|_|  |___/_|\___/|_| |_| |____/ \_/\_/ |_|\__\___|_| |_| 
-                                                                                   
-`)
-	fmt.Println("\nGo Version Manager - 帮助信息")
-	fmt.Println("\n用法:")
-	fmt.Printf("  %s [命令] [参数]\n", os.Args[0])
+                                                                                   `)
+	fmt.Println("\n🚀 Go Version Manager - 帮助信息")
+	fmt.Println("\n📋 用法:")
+	fmt.Printf("  %s [命令] [参数]\n", filepath.Base(os.Args[0]))
 
-	fmt.Println("\n支持的命令:")
+	fmt.Println("\n⚡ 支持的命令:")
 	for _, cmd := range commands {
 		fmt.Printf("  -%-12s %s\n", cmd.Name, cmd.Description)
 	}
 
-	fmt.Println("\n参数说明:")
-	fmt.Println("  -arch string    指定架构 (x86/x64/arm/arm64)")
+	fmt.Println("\n🔧 参数说明:")
+	fmt.Println("  -arch string    指定架构，支持以下格式:")
+	fmt.Println("                  • x86, 386, 32       (32位)")
+	fmt.Println("                  • x64, amd64, x86-64 (64位)")
+	fmt.Println("                  • arm                (ARM)")
+	fmt.Println("                  • arm64              (ARM64)")
 
-	fmt.Println("\n使用示例:")
-	for _, cmd := range commands {
-		fmt.Printf("  %s\n", cmd.Example)
-	}
+	fmt.Println("\n📝 使用示例:")
+	fmt.Println("  1. 列出可用版本:")
+	fmt.Printf("     %s -list\n", filepath.Base(os.Args[0]))
 
-	fmt.Println("\n注意: 修改系统环境变量需要管理员权限")
+	fmt.Println("\n  2. 安装指定版本:")
+	fmt.Printf("     %s -install 1.20.1 -arch x64\n", filepath.Base(os.Args[0]))
+
+	fmt.Println("\n  3. 切换到指定版本:")
+	fmt.Printf("     %s -use 1.20.1\n", filepath.Base(os.Args[0]))
+
+	fmt.Println("\n  4. 直接切换架构:")
+	fmt.Printf("     %s -arch x64\n", filepath.Base(os.Args[0]))
+	fmt.Printf("     %s -arch x86\n", filepath.Base(os.Args[0]))
+
+	fmt.Println("\n  5. 回滚环境变量:")
+	fmt.Printf("     %s -rollback\n", filepath.Base(os.Args[0]))
+
+	fmt.Println("\n  6. 强制更新版本列表:")
+	fmt.Printf("     %s -list -update\n", filepath.Base(os.Args[0]))
+
+	fmt.Println("\n📌 注意事项:")
+	fmt.Println("  • 修改系统环境变量需要管理员权限")
+	fmt.Println("  • 切换版本后需要重启终端和编辑器")
+	fmt.Println("  • 如果安装失败，可以使用 -rollback 回滚")
+	fmt.Println("  • 支持自动检测和使用本地安装包")
+
+	fmt.Println("\n💡 目录说明:")
+	fmt.Println("  • go-version/: Go版本安装目录")
+	fmt.Println("  • down/: 安装包下载目录")
+	fmt.Println("  • backup_env/: 环境变量备份目录")
+	fmt.Println("  • config/: 配置文件目录")
+
+	fmt.Println("\n🔗 更多信息:")
+	fmt.Println("  项目地址: https://github.com/yuaotian/go-version-switch")
+	fmt.Println("  问题反馈: https://github.com/yuaotian/go-version-switch/issues")
 }
 
 // findSimilarCommand 查找相似命令
@@ -163,27 +201,29 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 如果没有指定任何命令，显示帮助信息
-	if !listFlag && !updateFlag && installFlag == "" && useFlag == "" && !rollbackFlag {
-		// 检查是否只有 -arch 参数
-		if archFlag != "" {
-			if err := version.HandleArchitectureSwitch(baseDir, archFlag); err != nil {
-				fmt.Printf("切换架构失败: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		}
+	// 处理帮助信息显示
+	if helpFlag || len(os.Args) == 1 {
 		printHelp()
 		return
 	}
+
+	// 处理架构切换
+	if archFlag != "" && !listFlag && !updateFlag &&
+		installFlag == "" && useFlag == "" && !rollbackFlag {
+		if err := version.HandleArchitectureSwitch(baseDir, archFlag); err != nil {
+			fmt.Printf("切换架构失败: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	fmt.Println(`
   ____        __     __            _               ____          _ _       _      
  / ___| ___   \ \   / /__ _ __ ___(_) ___  _ __   / ___|_      _(_) |_ ___| |__   
  | |  _ / _ \  \ \ / / _ \ '__/ __| |/ _ \| '_ \  \___ \ \ /\ / / | __/ __| '_ \  
  | |_| | (_) |  \ V /  __/ |  \__ \ | (_) | | | |  ___) \ V  V /| | || (__| | | | 
   \____|\___/    \_/ \___|_|  |___/_|\___/|_| |_| |____/ \_/\_/ |_|\__\___|_| |_| 
-                                                                                   
-`)
+                                                                                   `)
 	// 处理回滚命令
 	if rollbackFlag {
 		if err := handleRollback(); err != nil {
