@@ -141,8 +141,12 @@ func UseVersion(baseDir string, opts InstallOptions) error {
 		return fmt.Errorf("版本 %s (%s) 未安装，请先安装", opts.Version, arch)
 	}
 
-	// 设置为当前Go环境
-	if err := SetAsCurrentGo(versionDir); err != nil {
+	// 设置为当前Go环境（-no-path：只写 GOROOT/GOARCH，PATH 交给 mise 等工具）
+	if NoPath {
+		if err := SetGoRootOnly(versionDir); err != nil {
+			return fmt.Errorf("切换版本失败: %v", err)
+		}
+	} else if err := SetAsCurrentGo(versionDir); err != nil {
 		return fmt.Errorf("切换版本失败: %v", err)
 	}
 
@@ -193,7 +197,11 @@ func extractGo(zipPath, version, arch string) (string, error) {
 		return "", fmt.Errorf("创建解压目录失败: %v", err)
 	}
 
-	// 目标目录
+	// 目标目录（架构统一用标准化后的名字，避免 -arch x64 生成 go-x.y.z-x64）
+	arch = strings.ToLower(normalizeArch(arch))
+	if arch == "" {
+		arch = "amd64"
+	}
 	targetDir := filepath.Join(extractDir, fmt.Sprintf("go-%s-%s", version, arch))
 
 	fmt.Printf("📂 解压目录: %s\n", targetDir)
@@ -220,8 +228,11 @@ func extractGo(zipPath, version, arch string) (string, error) {
 	fmt.Printf("✅ 解压完成，安装目录: %s\n", targetDir)
 	fmt.Printf("✨ Go %s (%s) 解压成功!\n", version, arch)
 
-	// 询问是否设置环境变量（-yes / 无人值守时按默认 Y 处理）
-	if confirm("\n🔧 是否立即将此版本设置为系统Go环境? [Y/n] ") {
+	// 询问是否设置环境变量（-no-path 跳过；-yes / 无人值守时按默认 Y 处理）
+	if NoPath {
+		fmt.Printf("ℹ️ 已跳过环境变量设置（-no-path）：安装目录 %s\n", targetDir)
+		fmt.Println("   需要用时把该目录的 bin 加进 PATH，或交给 mise / shims 托管")
+	} else if confirm("\n🔧 是否立即将此版本设置为系统Go环境? [Y/n] ") {
 		if err := SetAsCurrentGo(targetDir); err != nil {
 			return "", fmt.Errorf("❌ 设置环境变量失败: %v", err)
 		}

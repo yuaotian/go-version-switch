@@ -112,8 +112,11 @@ func DownloadAndExtract(release *GoRelease, baseDir string) error {
 
 	fmt.Printf("✨ Go %s (%s) 解压成功!\n", release.Version, release.Arch)
 
-	// 询问是否设置环境变量（-yes / 无人值守时按默认 Y 处理）
-	if confirm("\n🔧 是否立即将此版本设置为系统Go环境? [Y/n] ") {
+	// 询问是否设置环境变量（-no-path 跳过；-yes / 无人值守时按默认 Y 处理）
+	if NoPath {
+		fmt.Printf("ℹ️ 已跳过环境变量设置（-no-path）：安装目录 %s\n", targetDir)
+		fmt.Println("   需要用时把该目录的 bin 加进 PATH，或交给 mise / shims 托管")
+	} else if confirm("\n🔧 是否立即将此版本设置为系统Go环境? [Y/n] ") {
 		if err := SetAsCurrentGo(targetDir); err != nil {
 			return fmt.Errorf("❌ 设置环境变量失败: %v", err)
 		}

@@ -100,6 +100,46 @@ func SetAsCurrentGo(goRoot string) error {
     return nil
 }
 
+// detectArchFromGoRoot 从安装目录名推断 GOARCH
+func detectArchFromGoRoot(goRoot string) string {
+    lower := strings.ToLower(goRoot)
+    switch {
+    case strings.Contains(lower, "-arm64"):
+        return "arm64"
+    case strings.Contains(lower, "-arm"):
+        return "arm"
+    case strings.Contains(lower, "-x86-64"):
+        return "amd64"
+    case strings.Contains(lower, "-x86"):
+        return "386"
+    default:
+        return "amd64"
+    }
+}
+
+// SetGoRootOnly 只把 GOROOT / GOARCH 指到指定目录，不修改 PATH。
+// 用于 -no-path：PATH 交给 mise / shims 等工具托管，govs 只负责提供安装目录。
+func SetGoRootOnly(goRoot string) error {
+    if err := backupEnvironment(); err != nil {
+        return fmt.Errorf("备份环境变量失败: %v", err)
+    }
+
+    if err := manageGoRoot(goRoot); err != nil {
+        return err
+    }
+
+    arch := detectArchFromGoRoot(goRoot)
+    if err := writeRegValue(regEnvUser, "GOARCH", "REG_SZ", arch); err != nil {
+        return fmt.Errorf("设置GOARCH失败: %v", err)
+    }
+    _ = os.Setenv("GOARCH", arch)
+
+    broadcastEnvChange()
+
+    fmt.Printf("ℹ️ 已跳过 PATH 修改（-no-path），GOARCH=%s；用哪个 go 由 mise / 你的 PATH 方案决定\n", arch)
+    return nil
+}
+
 // SetupGoEnvironment 设置Go环境变量（用户级，无需管理员权限）
 func SetupGoEnvironment(newGoRoot string) error {
     // 只改用户级环境变量（HKCU）。如果当前有管理员权限，顺手清掉旧版本写进机器级的
@@ -117,16 +157,7 @@ func SetupGoEnvironment(newGoRoot string) error {
     }
 
     // 根据目录名判断架构
-    arch := "amd64" // 默认值
-    if strings.Contains(strings.ToLower(newGoRoot), "-x86-64") {
-        arch = "amd64"
-    } else if strings.Contains(strings.ToLower(newGoRoot), "-x86") {
-        arch = "386"
-    } else if strings.Contains(strings.ToLower(newGoRoot), "-arm64") {
-        arch = "arm64"
-    } else if strings.Contains(strings.ToLower(newGoRoot), "-arm") {
-        arch = "arm"
-    }
+    arch := detectArchFromGoRoot(newGoRoot)
 
     // 设置GOARCH（用户级）
     if err := writeRegValue(regEnvUser, "GOARCH", "REG_SZ", arch); err != nil {

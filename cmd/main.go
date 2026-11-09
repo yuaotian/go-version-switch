@@ -27,6 +27,7 @@ var (
 	helpFlag     bool
 	baseDir      string
 	yesFlag      bool
+	noPathFlag   bool
 )
 
 // 定义所有支持的命令
@@ -80,6 +81,7 @@ func init() {
 	flag.StringVar(&archFlag, "arch", "", "指定架构 (x86/x64/arm/arm64)")
 	flag.BoolVar(&rollbackFlag, "rollback", false, "回滚到上一次的环境变量配置")
 	flag.BoolVar(&yesFlag, "yes", false, "跳过交互确认（安装后自动设为当前 Go 环境）")
+	flag.BoolVar(&noPathFlag, "no-path", false, "只装不接管环境：不自动设 GOROOT/PATH（-use 时只改 GOROOT），配合 mise 等工具")
 }
 
 // printHelp 打印格式化的帮助信息
@@ -129,6 +131,10 @@ func printHelp() {
 
 	fmt.Println("\n  7. 无人值守安装（跳过交互确认）:")
 	fmt.Printf("     %s -install 1.26.0 -arch x64 -yes\n", filepath.Base(os.Args[0]))
+
+	fmt.Println("\n  8. 只装不接管环境（PATH 交给 mise / 其他管理器）:")
+	fmt.Printf("     %s -install 1.26.0 -arch x64 -no-path\n", filepath.Base(os.Args[0]))
+	fmt.Printf("     %s -use 1.26.0 -no-path          # 只改 GOROOT，不动 PATH\n", filepath.Base(os.Args[0]))
 
 	fmt.Println("\n📌 注意事项:")
 	fmt.Println("  • 修改系统环境变量需要管理员权限")
@@ -194,6 +200,8 @@ func main() {
 	flag.Parse()
 	// -yes：跳过安装过程中的交互确认（脚本 / CI / 无人值守）
 	version.AssumeYes = yesFlag
+	// -no-path：只装不接管环境（不写 PATH；-use 时只改 GOROOT）
+	version.NoPath = noPathFlag
 
 	// 检查未识别的参数
 	for _, arg := range flag.Args() {

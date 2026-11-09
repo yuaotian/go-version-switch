@@ -48,6 +48,10 @@ func (p *ProgressBar) RenderProgressBar(percent float64) string {
 // AssumeYes 为 true 时跳过交互确认（-yes，用于脚本 / CI / 无人值守安装）
 var AssumeYes bool
 
+// NoPath 为 true 时只装不接管环境（-no-path）：安装后不自动设 GOROOT/PATH，
+// `-use` 时也只写 GOROOT 不动 PATH，方便和其它版本管理器（mise / shims）分工。
+var NoPath bool
+
 // confirm 统一的交互确认。AssumeYes 直接通过；无输入（管道、CI）按默认值 y 处理。
 func confirm(prompt string) bool {
 	if AssumeYes {

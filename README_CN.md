@@ -41,8 +41,14 @@
    setx /M PATH "%PATH%;C:\Program Files\go-version-switch"
    # 安装指定版本
    govs.exe -install 1.23.4 -arch x64
+   # 只装不接管环境（不写 GOROOT/PATH，配合 mise 等版本管理器）
+   govs.exe -install 1.23.4 -arch x64 -no-path
    # 切换到已安装版本
    govs.exe -use 1.23.4
+   # 只改 GOROOT、不动 PATH（PATH 由 mise / shims 托管时用）
+   govs.exe -use 1.23.4 -no-path
+   # 跳过交互确认（脚本 / CI）
+   govs.exe -install 1.23.4 -arch x64 -yes
    # 切换架构
    govs.exe -arch x64
    # 回滚环境变量
