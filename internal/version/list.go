@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"go-version-switch/internal/config"
 )
 
 // VersionList 版本列表信息
@@ -94,18 +96,23 @@ func GetVersionList(baseDir string, forceUpdate bool) (*VersionList, error) {
 
 	// 需要更新时，从官网获取版本列表
 	if needUpdate {
-		fmt.Println("正在从官网获取版本列表...")
 		versions, err := FetchVersions()
 		if err != nil {
 			return nil, fmt.Errorf("获取版本列表失败: %v", err)
 		}
 
-		list.Versions = versions
+		// 合并而不是覆盖：官方接口可能只返回最近两个大版本，
+		// 直接覆盖会把缓存里的历史版本全冲掉（旧项目就装不回去了）。
+		existing, _ := LoadVersionsCache(cacheFile)
+		list.Versions = MergeReleases(existing, versions)
 		list.LastUpdateTime = time.Now()
 
 		// 保存到缓存
-		if err := SaveVersionsCache(versions, cacheFile); err != nil {
+		if err := SaveVersionsCache(list.Versions, cacheFile); err != nil {
 			fmt.Printf("警告: 保存版本缓存失败: %v\n", err)
+		}
+		if cfg, err := config.LoadConfig(); err == nil {
+			_ = cfg.SetLastUpdate(time.Now())
 		}
 	}
 

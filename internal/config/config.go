@@ -124,4 +124,10 @@ func (c *Config) SetCurrentVersion(version string) error {
 	return SaveConfig(c)
 }
 
+// SetLastUpdate 记录版本列表的最后更新时间
+func (c *Config) SetLastUpdate(t time.Time) error {
+	c.LastUpdate = CustomTime{Time: t}
+	return SaveConfig(c)
+}
+
 

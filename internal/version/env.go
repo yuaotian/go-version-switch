@@ -22,6 +22,45 @@ type EnvBackup struct {
     BackupFile string `json:"backup_file"`
 }
 
+const (
+    // 用户级环境变量：不需要管理员权限，且优先级高于机器级同名变量
+    regEnvUser = `HKEY_CURRENT_USER\Environment`
+    // 机器级环境变量：只读，用来发现旧版本遗留的全局 GOROOT/PATH
+    regEnvMachine = `HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Environment`
+)
+
+// readRegValue 读取注册表字符串值，不存在时返回 error
+func readRegValue(key, name string) (string, error) {
+    out, err := exec.Command("REG", "QUERY", key, "/v", name).CombinedOutput()
+    if err != nil {
+        return "", err
+    }
+    re := regexp.MustCompile(`REG_(?:EXPAND_)?SZ\s+(.+)`)
+    m := re.FindStringSubmatch(string(out))
+    if len(m) < 2 {
+        return "", fmt.Errorf("解析注册表值失败: %s", name)
+    }
+    return strings.TrimRight(m[1], "\r\n"), nil
+}
+
+// writeRegValue 写入注册表字符串值
+func writeRegValue(key, name, kind, value string) error {
+    out, err := exec.Command("REG", "ADD", key, "/v", name, "/t", kind, "/d", value, "/f").CombinedOutput()
+    if err != nil {
+        return fmt.Errorf("写入 %s 失败: %v\n%s", name, err, out)
+    }
+    return nil
+}
+
+// deleteRegValue 删除注册表字符串值
+func deleteRegValue(key, name string) error {
+    out, err := exec.Command("REG", "DELETE", key, "/v", name, "/f").CombinedOutput()
+    if err != nil {
+        return fmt.Errorf("删除 %s 失败: %v\n%s", name, err, out)
+    }
+    return nil
+}
+
 // SetAsCurrentGo 设置指定目录为当前Go环境（向后兼容）
 func SetAsCurrentGo(goRoot string) error {
     // 先备份当前环境
@@ -61,28 +100,20 @@ func SetAsCurrentGo(goRoot string) error {
     return nil
 }
 
-// SetupGoEnvironment 设置Go环境变量
+// SetupGoEnvironment 设置Go环境变量（用户级，无需管理员权限）
 func SetupGoEnvironment(newGoRoot string) error {
-    // 检查管理员权限
-    isAdmin, err := checkAdminPrivileges()
-    if err != nil {
-        return fmt.Errorf("检查管理员权限失败: %v", err)
+    // 只改用户级环境变量（HKCU）。如果当前有管理员权限，顺手清掉旧版本写进机器级的
+    // GOROOT / go bin 条目 —— Windows 的 PATH 是「机器级在前、用户级在后」，
+    // 机器级残留不清掉，用户级切换永远会被盖住。
+    if isAdmin, adminErr := checkAdminPrivileges(); adminErr == nil && isAdmin {
+        cleanupMachineLevelEnv()
+    } else {
+        fmt.Println("ℹ️ 非管理员运行：只更新用户级环境变量（推荐做法）")
     }
 
-    if !isAdmin {
-        return fmt.Errorf("需要管理员权限才能修改系统环境变量")
-    }
-
-    // 检测现有Go安装
-    existingGoRoot, err := detectExistingGo()
-    if err != nil {
-        fmt.Printf("警告: 检测现有Go安装时出错: %v\n", err)
-    } else if existingGoRoot != "" {
+    // 检测现有Go安装（仅用于提示）
+    if existingGoRoot, err := detectExistingGo(); err == nil && existingGoRoot != "" {
         fmt.Printf("🔍 发现现有Go安装: %s\n", existingGoRoot)
-        // 备份当前环境变量
-        if err := backupEnvironment(); err != nil {
-            fmt.Printf("警告: 备份环境变量失败: %v\n", err)
-        }
     }
 
     // 根据目录名判断架构
@@ -97,11 +128,9 @@ func SetupGoEnvironment(newGoRoot string) error {
         arch = "arm"
     }
 
-    // 设置GOARCH
-    cmd := exec.Command("REG", "ADD", "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
-        "/v", "GOARCH", "/t", "REG_SZ", "/d", arch, "/f")
-    if output, err := cmd.CombinedOutput(); err != nil {
-        return fmt.Errorf("设置GOARCH失败: %v\n%s", err, output)
+    // 设置GOARCH（用户级）
+    if err := writeRegValue(regEnvUser, "GOARCH", "REG_SZ", arch); err != nil {
+        return fmt.Errorf("设置GOARCH失败: %v", err)
     }
 
     // 更新当前进程的GOARCH
@@ -109,17 +138,20 @@ func SetupGoEnvironment(newGoRoot string) error {
         return fmt.Errorf("更新当前进程GOARCH失败: %v", err)
     }
 
-    fmt.Printf("✅ GOARCH环境变量已更新为: %s\n", arch)
+    fmt.Printf("✅ GOARCH 已更新为: %s（用户级）\n", arch)
 
     // 设置GOROOT
     if err := manageGoRoot(newGoRoot); err != nil {
         return fmt.Errorf("设置GOROOT失败: %v", err)
     }
 
-    // 更新PATH
-    if err := manageGoPath(); err != nil {
+    // 更新用户级 PATH
+    if err := manageGoPath(newGoRoot); err != nil {
         return fmt.Errorf("更新PATH失败: %v", err)
     }
+
+    // 通知已经打开的桌面程序刷新环境变量
+    broadcastEnvChange()
 
     return nil
 }
@@ -129,7 +161,7 @@ func isValidGoRoot(dir string) bool {
     return validateGoRootPath(dir) == nil
 }
 
-// backupEnvironment 备份环境变量
+// backupEnvironment 备份环境变量（用户级为准，用户级没有 PATH 时退回机器级）
 func backupEnvironment() error {
     // 创建备份目录
     backupDir := filepath.Join(filepath.Dir(os.Args[0]), "data", "backup_env")
@@ -137,32 +169,24 @@ func backupEnvironment() error {
         return fmt.Errorf("创建备份目录失败: %v", err)
     }
 
-    // 获取当前GOROOT
-    goroot := os.Getenv("GOROOT")
-
-    // 获取当前PATH
-    cmd := exec.Command("REG", "QUERY", "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment", "/v", "Path")
-    output, err := cmd.CombinedOutput()
-    if err != nil {
-        return fmt.Errorf("获取PATH环境变量失败: %v", err)
+    // 获取当前GOROOT（用户级优先）
+    goroot, err := readRegValue(regEnvUser, "GOROOT")
+    if err != nil || goroot == "" {
+        goroot = os.Getenv("GOROOT")
     }
 
-    re := regexp.MustCompile(`REG_(?:EXPAND_)?SZ\s+(.+)`)
-    matches := re.FindStringSubmatch(string(output))
-    if len(matches) < 2 {
-        return fmt.Errorf("解析PATH环境变量失败")
+    // 获取当前PATH：用户级没有就备份机器级的（回滚时才知道原来什么样）
+    path, err := readRegValue(regEnvUser, "Path")
+    if err != nil || path == "" {
+        if machinePath, machineErr := readRegValue(regEnvMachine, "Path"); machineErr == nil {
+            path = machinePath
+        }
     }
-    path := strings.TrimSpace(matches[1])
 
     // 获取当前 GOARCH
-    cmd = exec.Command("REG", "QUERY", "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment", "/v", "GOARCH")
-    output, err = cmd.CombinedOutput()
-    var currentArch string
-    if err == nil {
-        re := regexp.MustCompile(`REG_(?:EXPAND_)?SZ\s+(.+)`)
-        if matches := re.FindStringSubmatch(string(output)); len(matches) >= 2 {
-            currentArch = strings.TrimSpace(matches[1])
-        }
+    currentArch, err := readRegValue(regEnvUser, "GOARCH")
+    if err != nil || currentArch == "" {
+        currentArch, _ = readRegValue(regEnvMachine, "GOARCH")
     }
     if currentArch == "" {
         currentArch = runtime.GOARCH // 如果获取失败，使用当前系统架构作为默认值
@@ -209,18 +233,16 @@ func detectExistingGo() (string, error) {
     return os.Getenv("GOROOT"), nil
 }
 
-// manageGoRoot 管理GOROOT环境变量
+// manageGoRoot 管理GOROOT环境变量（写用户级，不需要管理员权限）
 func manageGoRoot(goRoot string) error {
     // 验证路径
     if err := validateGoRootPath(goRoot); err != nil {
         return fmt.Errorf("Go路径验证失败: %v", err)
     }
 
-    // 设置GOROOT环境变量
-    cmd := exec.Command("REG", "ADD", "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
-        "/v", "GOROOT", "/t", "REG_SZ", "/d", goRoot, "/f")
-    if output, err := cmd.CombinedOutput(); err != nil {
-        return fmt.Errorf("设置GOROOT失败: %v\n%s", err, output)
+    // 设置用户级 GOROOT（用户级优先于机器级）
+    if err := writeRegValue(regEnvUser, "GOROOT", "REG_SZ", goRoot); err != nil {
+        return fmt.Errorf("设置GOROOT失败: %v", err)
     }
 
     // 更新当前进程的环境变量
@@ -228,59 +250,88 @@ func manageGoRoot(goRoot string) error {
         return fmt.Errorf("更新当前进程GOROOT失败: %v", err)
     }
 
-    fmt.Printf("✅ GOROOT环境变量已更新: %s\n", goRoot)
+    fmt.Printf("✅ GOROOT环境变量已更新（用户级）: %s\n", goRoot)
     return nil
 }
 
-// manageGoPath 管理PATH环境变量
-func manageGoPath() error {
-    // 获取系统PATH
-    cmd := exec.Command("REG", "QUERY", "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
-        "/v", "Path")
-    output, err := cmd.CombinedOutput()
+// manageGoPath 管理用户级PATH：清掉所有 Go bin 条目，再把 %GOROOT%\bin 放到最前
+func manageGoPath(goRoot string) error {
+    // 用户级 PATH 可能还不存在，此时从空开始（机器级 PATH 仍然生效且在前，见 cleanupMachineLevelEnv）
+    currentPath, err := readRegValue(regEnvUser, "Path")
     if err != nil {
-        return fmt.Errorf("获取系统PATH失败: %v", err)
+        currentPath = ""
     }
-
-    // 解析PATH值
-    re := regexp.MustCompile(`REG_(?:EXPAND_)?SZ\s+(.+)`)
-    matches := re.FindStringSubmatch(string(output))
-    if len(matches) < 2 {
-        return fmt.Errorf("解析系统PATH失败")
-    }
-
-    currentPath := strings.TrimSpace(matches[1])
 
     // 移除所有指向 Go 安装 bin 的条目：
     //   • %GOROOT%\bin（govs 自己写的）
     //   • 旧版本 govs 写死的 ...\go-version\go-x.y.z-arch\bin / C:\Program Files\Go\bin
-    // 只删 %GOROOT%\bin 的话，历史写死的路径会一直留在 PATH 里，切换版本后仍旧指向老 go.exe。
     pathParts := strings.Split(currentPath, string(os.PathListSeparator))
     newParts := make([]string, 0, len(pathParts))
     for _, part := range pathParts {
+        if strings.TrimSpace(part) == "" {
+            continue
+        }
         if isGoBinPath(part) {
             continue
         }
         newParts = append(newParts, part)
     }
 
-    // 将 %GOROOT%\bin 添加到 PATH 的最前面
-    newPath := "%GOROOT%\\bin" + string(os.PathListSeparator) + strings.Join(newParts, string(os.PathListSeparator))
+    // 将 %GOROOT%\bin 添加到用户级 PATH 最前面
+    goBin := filepath.Join(goRoot, "bin")
+    newPath := goBin + string(os.PathListSeparator) + strings.Join(newParts, string(os.PathListSeparator))
 
-    // 更新系统PATH
-    cmd = exec.Command("REG", "ADD", "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
-        "/v", "Path", "/t", "REG_EXPAND_SZ", "/d", newPath, "/f")
-    if output, err := cmd.CombinedOutput(); err != nil {
-        return fmt.Errorf("更新系统PATH失败: %v\n%s", err, output)
+    if err := writeRegValue(regEnvUser, "Path", "REG_EXPAND_SZ", newPath); err != nil {
+        return fmt.Errorf("更新用户级PATH失败: %v", err)
     }
 
-    // 更新当前进程的PATH
-    if err := os.Setenv("PATH", newPath); err != nil {
+    // 当前进程用展开后的真实路径（注册表里存的是字面路径，这里没必要再塞 %GOROOT%）
+    if err := os.Setenv("PATH", newPath+string(os.PathListSeparator)+os.Getenv("PATH")); err != nil {
         return fmt.Errorf("更新当前进程PATH失败: %v", err)
     }
 
-    fmt.Println("✅ PATH环境变量已更新（Go目录已移至系统PATH最前）")
+    fmt.Println("✅ 用户级 PATH 已更新（Go 目录已移至最前）")
     return nil
+}
+
+// cleanupMachineLevelEnv 清理旧版本写进机器级的 Go 环境变量。
+// Windows 的 PATH 是「机器级在前、用户级在后」，机器级里只要还留着 go 的 bin 目录，
+// 用户级切换就永远不生效，所以这里必须清掉；没有管理员权限时只提示。
+func cleanupMachineLevelEnv() {
+    if machineGoRoot, err := readRegValue(regEnvMachine, "GOROOT"); err == nil && machineGoRoot != "" {
+        if strings.Contains(strings.ToLower(machineGoRoot), "go-version") {
+            if delErr := deleteRegValue(regEnvMachine, "GOROOT"); delErr == nil {
+                fmt.Printf("🧹 已删除机器级 GOROOT（旧版遗留）: %s\n", machineGoRoot)
+            } else {
+                fmt.Printf("⚠️ 机器级 GOROOT 清理失败（需管理员）: %v\n", delErr)
+            }
+        }
+    }
+
+    machinePath, err := readRegValue(regEnvMachine, "Path")
+    if err != nil || machinePath == "" {
+        return
+    }
+    parts := strings.Split(machinePath, string(os.PathListSeparator))
+    kept := make([]string, 0, len(parts))
+    removed := make([]string, 0, 2)
+    for _, p := range parts {
+        if isGoBinPath(p) {
+            removed = append(removed, p)
+            continue
+        }
+        kept = append(kept, p)
+    }
+    if len(removed) == 0 {
+        return
+    }
+    if err := writeRegValue(regEnvMachine, "Path", "REG_EXPAND_SZ", strings.Join(kept, string(os.PathListSeparator))); err != nil {
+        fmt.Printf("⚠️ 机器级 PATH 清理失败（需管理员）: %v\n", err)
+        return
+    }
+    for _, r := range removed {
+        fmt.Printf("🧹 已从机器级 PATH 移除: %s\n", r)
+    }
 }
 
 // isGoBinPath 判断某个 PATH 条目是否指向 Go 安装目录的 bin。
@@ -378,32 +429,26 @@ func RestoreEnvironment(backupFile string) error {
         return fmt.Errorf("解析备份数据失败: %v", err)
     }
 
-    // 恢复 GOROOT
+    // 恢复 GOROOT（用户级）
     if backup.GOROOT != "" {
-        cmd := exec.Command("REG", "ADD", "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
-            "/v", "GOROOT", "/t", "REG_SZ", "/d", backup.GOROOT, "/f")
-        if output, err := cmd.CombinedOutput(); err != nil {
-            return fmt.Errorf("恢复 GOROOT 失败: %v\n%s", err, output)
+        if err := writeRegValue(regEnvUser, "GOROOT", "REG_SZ", backup.GOROOT); err != nil {
+            return fmt.Errorf("恢复 GOROOT 失败: %v", err)
         }
         os.Setenv("GOROOT", backup.GOROOT)
     }
 
-    // 恢复 GOARCH
+    // 恢复 GOARCH（用户级）
     if backup.GOARCH != "" {
-        cmd := exec.Command("REG", "ADD", "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
-            "/v", "GOARCH", "/t", "REG_SZ", "/d", backup.GOARCH, "/f")
-        if output, err := cmd.CombinedOutput(); err != nil {
-            return fmt.Errorf("恢复 GOARCH 失败: %v\n%s", err, output)
+        if err := writeRegValue(regEnvUser, "GOARCH", "REG_SZ", backup.GOARCH); err != nil {
+            return fmt.Errorf("恢复 GOARCH 失败: %v", err)
         }
         os.Setenv("GOARCH", backup.GOARCH)
     }
 
-    // 恢复 PATH
+    // 恢复 PATH（用户级）
     if backup.Path != "" {
-        cmd := exec.Command("REG", "ADD", "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
-            "/v", "Path", "/t", "REG_EXPAND_SZ", "/d", backup.Path, "/f")
-        if output, err := cmd.CombinedOutput(); err != nil {
-            return fmt.Errorf("恢复 PATH 失败: %v\n%s", err, output)
+        if err := writeRegValue(regEnvUser, "Path", "REG_EXPAND_SZ", backup.Path); err != nil {
+            return fmt.Errorf("恢复 PATH 失败: %v", err)
         }
         os.Setenv("PATH", backup.Path)
     }
