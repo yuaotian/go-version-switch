@@ -26,6 +26,7 @@ var (
 	rollbackFlag bool
 	helpFlag     bool
 	baseDir      string
+	yesFlag      bool
 )
 
 // 定义所有支持的命令
@@ -78,6 +79,7 @@ func init() {
 	flag.StringVar(&useFlag, "use", "", "切换到指定版本")
 	flag.StringVar(&archFlag, "arch", "", "指定架构 (x86/x64/arm/arm64)")
 	flag.BoolVar(&rollbackFlag, "rollback", false, "回滚到上一次的环境变量配置")
+	flag.BoolVar(&yesFlag, "yes", false, "跳过交互确认（安装后自动设为当前 Go 环境）")
 }
 
 // printHelp 打印格式化的帮助信息
@@ -124,6 +126,9 @@ func printHelp() {
 
 	fmt.Println("\n  6. 强制更新版本列表:")
 	fmt.Printf("     %s -list -update\n", filepath.Base(os.Args[0]))
+
+	fmt.Println("\n  7. 无人值守安装（跳过交互确认）:")
+	fmt.Printf("     %s -install 1.26.0 -arch x64 -yes\n", filepath.Base(os.Args[0]))
 
 	fmt.Println("\n📌 注意事项:")
 	fmt.Println("  • 修改系统环境变量需要管理员权限")
@@ -187,6 +192,8 @@ func printRefreshTips() {
 
 func main() {
 	flag.Parse()
+	// -yes：跳过安装过程中的交互确认（脚本 / CI / 无人值守）
+	version.AssumeYes = yesFlag
 
 	// 检查未识别的参数
 	for _, arg := range flag.Args() {

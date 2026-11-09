@@ -33,7 +33,7 @@ func GetVersionList(baseDir string, forceUpdate bool) (*VersionList, error) {
 	current, err := GetCurrentVersion()
 	if err == nil {
 		list.CurrentVersion = current.Version
-		list.InstalledPaths[current.Version] = current.Path
+		list.InstalledPaths[installedKey(current.Version, current.Arch)] = current.Path
 	}
 
 	// 获取已安装版本
@@ -56,7 +56,8 @@ func GetVersionList(baseDir string, forceUpdate bool) (*VersionList, error) {
 					if len(parts) >= 2 {
 						version := parts[0]
 						path := filepath.Join(versionDir, dirName)
-						list.InstalledPaths[version] = path
+						// 用 version-arch 做 key：同一版本会装多个架构，只用 version 会让 x86/arm64 互相覆盖
+						list.InstalledPaths[installedKey(version, parts[1])] = path
 					}
 				}
 			}
@@ -80,16 +81,15 @@ func GetVersionList(baseDir string, forceUpdate bool) (*VersionList, error) {
 		}
 	}
 
-	// 如果不需要更新，尝试从缓存加载
+	// 命中缓存：直接用，但后续的排序 / 当前架构标记仍要执行（原来这里直接 return，
+	// 导致从缓存读列表时 IsCurrentArch 全是 false，-list 里看不到 ✅ 标记）
 	if !needUpdate {
-		versions, err := LoadVersionsCache(cacheFile)
-		if err == nil {
+		if versions, err := LoadVersionsCache(cacheFile); err == nil && len(versions) > 0 {
 			list.Versions = versions
 			list.LastUpdateTime = getFileModTime(cacheFile)
-			return list, nil
+		} else {
+			needUpdate = true
 		}
-		// 如果加载缓存失败，需要更新
-		needUpdate = true
 	}
 
 	// 需要更新时，从官网获取版本列表
@@ -109,23 +109,16 @@ func GetVersionList(baseDir string, forceUpdate bool) (*VersionList, error) {
 		}
 	}
 
-	// 对版本进行排序
+	// 对版本进行排序（新版在前）
 	sort.Slice(list.Versions, func(i, j int) bool {
 		return compareVersions(list.Versions[i].Version, list.Versions[j].Version) > 0
 	})
 
-	// 过滤只显示当前系统架构的版本
-	filteredVersions := make([]*GoRelease, 0)
+	// 标记当前系统架构
 	currentArch := runtime.GOARCH
-	// 添加当前系统架构的标记
 	for _, v := range list.Versions {
-		// 标记当前系统架构
-		if strings.Contains(strings.ToLower(v.DownloadURL), currentArch) {
-			v.IsCurrentArch = true
-		}
-		filteredVersions = append(filteredVersions, v)
+		v.IsCurrentArch = strings.Contains(strings.ToLower(v.DownloadURL), currentArch)
 	}
-	list.Versions = filteredVersions
 
 	return list, nil
 }
@@ -146,7 +139,7 @@ func (l *VersionList) PrintVersionList() {
 	if l.CurrentVersion != "" {
 		fmt.Println("🎯 当前系统Go环境:")
 		fmt.Printf("   • 版本: %s\n", l.CurrentVersion)
-		if path, ok := l.InstalledPaths[l.CurrentVersion]; ok {
+		if path, ok := l.InstalledPaths[installedKey(l.CurrentVersion, runtime.GOARCH)]; ok {
 			fmt.Printf("   • 安装路径: %s\n", path)
 		}
 		// 获取GOPATH、GOROOT、GOARCH
@@ -265,7 +258,7 @@ func (l *VersionList) PrintVersionList() {
 
 		for _, v := range releases {
 			status := "可安装"
-			if _, ok := l.InstalledPaths[v.Version]; ok {
+			if _, ok := l.InstalledPaths[installedKey(v.Version, v.Arch)]; ok {
 				if v.Version == l.CurrentVersion {
 					status = "当前版本 📍"
 				} else {
@@ -378,27 +371,48 @@ func getFileModTime(path string) time.Time {
 	return info.ModTime()
 }
 
-// compareVersions 比较两个版本号
+// installedKey 已安装版本在 InstalledPaths 里的 key：version-arch
+func installedKey(version, arch string) string {
+	normalized := normalizeArch(arch)
+	if normalized == "" {
+		normalized = strings.ToLower(arch)
+	}
+	return version + "-" + strings.ToLower(normalized)
+}
+
+// compareVersions 比较两个版本号（按数值比较，别按字符串：字符串会把 1.10 判成小于 1.9）
 func compareVersions(v1, v2 string) int {
-	parts1 := strings.Split(v1, ".")
-	parts2 := strings.Split(v2, ".")
+	p1 := parseVersionNumbers(v1)
+	p2 := parseVersionNumbers(v2)
 
-	// 补齐版本号长度
-	for len(parts1) < 3 {
-		parts1 = append(parts1, "0")
-	}
-	for len(parts2) < 3 {
-		parts2 = append(parts2, "0")
-	}
-
-	// 逐段比较
-	for i := 0; i < 3; i++ {
-		if parts1[i] > parts2[i] {
+	for i := 0; i < len(p1); i++ {
+		if p1[i] > p2[i] {
 			return 1
 		}
-		if parts1[i] < parts2[i] {
+		if p1[i] < p2[i] {
 			return -1
 		}
 	}
 	return 0
+}
+
+// parseVersionNumbers 把 "1.26.0" / "go1.26.0" / "1.26rc1" 解析成 [3]int
+func parseVersionNumbers(v string) [3]int {
+	var out [3]int
+	v = strings.TrimSpace(v)
+	v = strings.TrimPrefix(v, "go")
+	for i, part := range strings.Split(v, ".") {
+		if i >= len(out) {
+			break
+		}
+		num := 0
+		for _, r := range part {
+			if r < '0' || r > '9' {
+				break
+			}
+			num = num*10 + int(r-'0')
+		}
+		out[i] = num
+	}
+	return out
 }

@@ -220,11 +220,8 @@ func extractGo(zipPath, version, arch string) (string, error) {
 	fmt.Printf("✅ 解压完成，安装目录: %s\n", targetDir)
 	fmt.Printf("✨ Go %s (%s) 解压成功!\n", version, arch)
 
-	// 询问是否设置环境变量
-	fmt.Print("\n🔧 是否立即将此版本设置为系统Go环境? [Y/n] ")
-	var answer string
-	fmt.Scanln(&answer)
-	if answer == "" || strings.ToLower(answer) == "y" {
+	// 询问是否设置环境变量（-yes / 无人值守时按默认 Y 处理）
+	if confirm("\n🔧 是否立即将此版本设置为系统Go环境? [Y/n] ") {
 		if err := SetAsCurrentGo(targetDir); err != nil {
 			return "", fmt.Errorf("❌ 设置环境变量失败: %v", err)
 		}
@@ -265,30 +262,39 @@ func prepareInstallEnvironment(baseDir string, opts *InstallOptions) error {
 	return nil
 }
 
-// findTargetRelease 查找目标版本
+// findTargetRelease 查找目标版本。
+// 缓存里的版本列表会一直用到用户手动 -update，所以在缓存里找不到时先强制刷新一次再查，
+// 否则新版本（比如 go.mod 要的 1.26.0）永远报"未找到版本"。
 func findTargetRelease(baseDir string, opts InstallOptions) (*GoRelease, error) {
-	// 获取版本列表
-	list, err := GetVersionList(baseDir, false)
-	if err != nil {
-		return nil, fmt.Errorf("获取版本列表失败: %v", err)
-	}
-	// fmt.Println("输入架构 ",opts.Arch)
-	// 查找指定版本和架构的发布版本
 	arch := normalizeArch(opts.Arch)
-	// fmt.Println("标准化架构 ",arch)
-	for _, v := range list.Versions {
-		if v.Version == opts.Version && strings.EqualFold(v.Arch, arch) {
-			return v, nil
+	if arch == "" {
+		return nil, fmt.Errorf("不支持的架构: %s", opts.Arch)
+	}
+
+	for attempt, force := range []bool{false, true} {
+		list, err := GetVersionList(baseDir, force)
+		if err != nil {
+			return nil, fmt.Errorf("获取版本列表失败: %v", err)
+		}
+		for _, v := range list.Versions {
+			if v.Version == opts.Version && strings.EqualFold(v.Arch, arch) {
+				return v, nil
+			}
+		}
+		if attempt == 0 {
+			fmt.Printf("⚠️ 本地版本列表里没有 %s，正在刷新官方版本列表后重试...\n", opts.Version)
 		}
 	}
 
-	return nil, fmt.Errorf("未找到版本 %s 的 %s 架构版本", opts.Version, arch)
+	return nil, fmt.Errorf("未找到版本 %s 的 %s 架构版本（已尝试刷新版本列表）", opts.Version, arch)
 }
 
-// saveVersionConfig 保存版本配置
+// saveVersionConfig 保存版本配置。
+// 目录名必须用标准化后的架构（amd64），不能用用户输入的 x64，否则配置里记的路径和真实目录对不上。
 func saveVersionConfig(baseDir string, opts InstallOptions) error {
+	arch := normalizeArch(opts.Arch)
 	versionDir := filepath.Join(baseDir, "go-version",
-		fmt.Sprintf("go-%s-%s", opts.Version, strings.ToLower(opts.Arch)))
+		fmt.Sprintf("go-%s-%s", opts.Version, strings.ToLower(arch)))
 
 	cfg, err := config.LoadConfig()
 	if err != nil {

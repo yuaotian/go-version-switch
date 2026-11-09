@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strings"
 )
@@ -25,11 +26,38 @@ func NewDefaultProgressBar() *ProgressBar {
 	}
 }
 
-// RenderProgressBar 渲染进度条
+// RenderProgressBar 渲染进度条（percent 会被夹到 [0,1]，避免负数 Repeat 导致 panic）
 func (p *ProgressBar) RenderProgressBar(percent float64) string {
+	if percent < 0 || math.IsNaN(percent) {
+		percent = 0
+	}
+	if percent > 1 {
+		percent = 1
+	}
 	completed := int(float64(p.Width) * percent)
+	if completed < 0 {
+		completed = 0
+	}
+	if completed > p.Width {
+		completed = p.Width
+	}
 	return strings.Repeat(p.FilledChar, completed) +
 		strings.Repeat(p.EmptyChar, p.Width-completed)
+}
+
+// AssumeYes 为 true 时跳过交互确认（-yes，用于脚本 / CI / 无人值守安装）
+var AssumeYes bool
+
+// confirm 统一的交互确认。AssumeYes 直接通过；无输入（管道、CI）按默认值 y 处理。
+func confirm(prompt string) bool {
+	if AssumeYes {
+		return true
+	}
+	fmt.Print(prompt)
+	var answer string
+	_, _ = fmt.Scanln(&answer)
+	answer = strings.TrimSpace(strings.ToLower(answer))
+	return answer == "" || answer == "y" || answer == "yes"
 }
 
 // FileVerifier 文件验证器

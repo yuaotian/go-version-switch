@@ -251,13 +251,17 @@ func manageGoPath() error {
 
     currentPath := strings.TrimSpace(matches[1])
 
-    // 移除现有的 %GOROOT%\bin（如果存在）
+    // 移除所有指向 Go 安装 bin 的条目：
+    //   • %GOROOT%\bin（govs 自己写的）
+    //   • 旧版本 govs 写死的 ...\go-version\go-x.y.z-arch\bin / C:\Program Files\Go\bin
+    // 只删 %GOROOT%\bin 的话，历史写死的路径会一直留在 PATH 里，切换版本后仍旧指向老 go.exe。
     pathParts := strings.Split(currentPath, string(os.PathListSeparator))
-    newParts := make([]string, 0)
+    newParts := make([]string, 0, len(pathParts))
     for _, part := range pathParts {
-        if !strings.Contains(strings.ToLower(part), "goroot") {
-            newParts = append(newParts, part)
+        if isGoBinPath(part) {
+            continue
         }
+        newParts = append(newParts, part)
     }
 
     // 将 %GOROOT%\bin 添加到 PATH 的最前面
@@ -277,6 +281,24 @@ func manageGoPath() error {
 
     fmt.Println("✅ PATH环境变量已更新（Go目录已移至系统PATH最前）")
     return nil
+}
+
+// isGoBinPath 判断某个 PATH 条目是否指向 Go 安装目录的 bin。
+// 切换版本时要把这类条目全部清掉，再由 %GOROOT%\bin 统一接管。
+func isGoBinPath(part string) bool {
+    p := strings.TrimSpace(strings.ToLower(part))
+    if p == "" {
+        return false
+    }
+    if strings.Contains(p, "goroot") {
+        return true
+    }
+    if !strings.HasSuffix(p, `\bin`) {
+        return false
+    }
+    return strings.Contains(p, `\go-version\`) ||
+        strings.HasSuffix(p, `\go\bin`) ||
+        strings.Contains(p, `\golang\`)
 }
 
 // validateGoRootPath 验证Go根目录路径

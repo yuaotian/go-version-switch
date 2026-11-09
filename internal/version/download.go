@@ -18,6 +18,7 @@ type DownloadProgress struct {
 	Total      int64
 	Downloaded int64
 	StartTime  time.Time
+	lastRender time.Time // 上次刷新时间，用来限制刷屏频率
 }
 
 // 进度条字符
@@ -111,11 +112,8 @@ func DownloadAndExtract(release *GoRelease, baseDir string) error {
 
 	fmt.Printf("✨ Go %s (%s) 解压成功!\n", release.Version, release.Arch)
 
-	// 询问是否设置环境变量
-	fmt.Print("\n🔧 是否立即将此版本设置为系统Go环境? [Y/n] ")
-	var answer string
-	fmt.Scanln(&answer)
-	if answer == "" || strings.ToLower(answer) == "y" {
+	// 询问是否设置环境变量（-yes / 无人值守时按默认 Y 处理）
+	if confirm("\n🔧 是否立即将此版本设置为系统Go环境? [Y/n] ") {
 		if err := SetAsCurrentGo(targetDir); err != nil {
 			return fmt.Errorf("❌ 设置环境变量失败: %v", err)
 		}
@@ -179,24 +177,47 @@ func (pw *ProgressWriter) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-// showProgress 显示下载进度
+// showProgress 显示下载进度。
+// 注意：服务端可能不返回 Content-Length（chunked / 代理），此时 Total<=0，
+// 绝不能拿它当除数，否则 percent=NaN、completed=MinInt，strings.Repeat 直接 panic。
 func (p *DownloadProgress) showProgress() {
-	percent := float64(p.Downloaded) / float64(p.Total) * 100
 	elapsed := time.Since(p.StartTime).Seconds()
+	if elapsed <= 0 {
+		elapsed = 1e-9
+	}
 	speed := float64(p.Downloaded) / elapsed / 1024 / 1024 // MB/s
 
-	// 计算进度条
-	completed := int(float64(progressWidth) * float64(p.Downloaded) / float64(p.Total))
+	// 长度未知：只报已下载量与速度
+	if p.Total <= 0 {
+		fmt.Printf("\r⏳ 已下载 %.1fMB %.1fMB/s", float64(p.Downloaded)/1024/1024, speed)
+		return
+	}
+
+	percent := float64(p.Downloaded) / float64(p.Total) * 100
+	if percent > 100 {
+		percent = 100
+	}
+	if percent < 0 {
+		percent = 0
+	}
+
+	completed := int(float64(progressWidth) * percent / 100)
+	if completed < 0 {
+		completed = 0
+	}
+	if completed > progressWidth {
+		completed = progressWidth
+	}
 	bar := strings.Repeat(progressChar, completed) + strings.Repeat(emptyChar, progressWidth-completed)
 
 	// 计算剩余时间
-	var eta string
+	eta := "计算中..."
 	if speed > 0 {
 		remainingBytes := p.Total - p.Downloaded
-		remainingSeconds := float64(remainingBytes) / (speed * 1024 * 1024)
-		eta = fmt.Sprintf("%.0fs", remainingSeconds)
-	} else {
-		eta = "计算中..."
+		if remainingBytes < 0 {
+			remainingBytes = 0
+		}
+		eta = fmt.Sprintf("%.0fs", float64(remainingBytes)/(speed*1024*1024))
 	}
 
 	// 使用 \r 回到行首，刷新进度显示
@@ -244,6 +265,10 @@ func unzip(src, dest string) error {
 	}
 
 	// 遍历压缩文件
+	step := totalFiles / 100
+	if step < 1 {
+		step = 1
+	}
 	for i, f := range r.File {
 		// 处理文件路径，移除第一级 "go/" 目录
 		fpath := strings.TrimPrefix(f.Name, "go/")
@@ -251,8 +276,10 @@ func unzip(src, dest string) error {
 		// 构建目标路径
 		fpath = filepath.Join(dest, fpath)
 
-		// 显示进度
-		fmt.Printf("\r📦 解压进度: %d/%d", i+1, totalFiles)
+		// 显示进度：每 1% 刷新一次，避免上万个文件把控制台刷爆
+		if i%step == 0 || i == totalFiles-1 {
+			fmt.Printf("\r📦 解压进度: %d/%d", i+1, totalFiles)
+		}
 
 		// 如果是目录，创建它
 		if f.FileInfo().IsDir() {
@@ -350,6 +377,14 @@ func (dm *DownloadManager) Download() error {
 
 func (dm *DownloadManager) UpdateProgress(n int64) {
 	dm.Downloaded += n
+
+	// 未知长度时退化为纯速度显示，避免除零
+	if dm.ContentSize <= 0 {
+		speed := float64(dm.Downloaded) / time.Since(dm.StartTime).Seconds() / 1024 / 1024
+		fmt.Printf("\r⏳ 已下载 %.1fMB %.1fMB/s", float64(dm.Downloaded)/1024/1024, speed)
+		return
+	}
+
 	percent := float64(dm.Downloaded) / float64(dm.ContentSize)
 	speed := float64(dm.Downloaded) / time.Since(dm.StartTime).Seconds() / 1024 / 1024
 
@@ -373,5 +408,10 @@ func (dm *DownloadManager) calculateETA(speed float64) string {
 
 func (p *DownloadProgress) UpdateProgress(n int64) {
 	p.Downloaded += n
+	// 限流：最多每 200ms 刷新一次，避免 32KB 一次 Write 把控制台刷爆
+	if time.Since(p.lastRender) < 200*time.Millisecond && (p.Total <= 0 || p.Downloaded < p.Total) {
+		return
+	}
+	p.lastRender = time.Now()
 	p.showProgress()
 }
